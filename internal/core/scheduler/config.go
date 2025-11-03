@@ -117,16 +117,31 @@ func (j *JobConfig) Validate(withSeconds bool) error {
 		return nil
 	}
 
+	// 验证任务名称
 	if j.Name == "" {
 		return ErrInvalidJobName
 	}
 
+	// 验证 Cron 表达式
 	if j.Spec == "" {
 		return ErrInvalidCronSpec
 	}
 
-	// 简单验证 cron 表达式格式
-	// 实际解析由 cron 库完成
+	// 验证 cron 表达式格式
+	if err := validateCronSpec(j.Spec, withSeconds); err != nil {
+		return err
+	}
+
+	// 验证超时时间（如果设置）
+	if j.Timeout < 0 {
+		return ErrInvalidTimeout
+	}
+
+	// 验证重试次数（如果设置）
+	if j.RetryCount < 0 {
+		return ErrInvalidRetryCount
+	}
+
 	return nil
 }
 
@@ -150,4 +165,3 @@ func (c *Config) GetJobByName(name string) *JobConfig {
 	}
 	return nil
 }
-

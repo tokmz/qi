@@ -38,5 +38,11 @@ var (
 
 	// ErrJobPanic 任务执行 panic
 	ErrJobPanic = errors.New("job execution panic")
+
+	// ErrInvalidTimeout 无效的超时时间
+	ErrInvalidTimeout = errors.New("invalid timeout value")
+
+	// ErrInvalidRetryCount 无效的重试次数
+	ErrInvalidRetryCount = errors.New("invalid retry count")
 )
 
