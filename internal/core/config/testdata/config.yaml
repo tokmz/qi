@@ -1,0 +1,22 @@
+# 测试配置文件
+app:
+  name: "Test Application"
+  version: "1.0.0"
+  debug: true
+  tags:
+    - "test"
+    - "demo"
+
+server:
+  host: "localhost"
+  port: 8080
+  timeout: 30s
+
+database:
+  driver: "mysql"
+  host: "localhost"
+  port: 3306
+  username: "root"
+  password: "password"
+  dbname: "testdb"
+
