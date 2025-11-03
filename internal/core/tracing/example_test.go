@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"qi/internal/core/tracing"
+	"qi/internal/middleware"
 )
 
 // Example_basic 基础使用示例
@@ -83,7 +84,7 @@ func Example_ginMiddleware() {
 	r := gin.New()
 
 	// 使用链路追踪中间件
-	r.Use(tracing.GinMiddleware("my-api"))
+	r.Use(middleware.TracingMiddleware("my-api"))
 
 	// 定义路由
 	r.GET("/users/:id", getUserHandler)
@@ -106,7 +107,7 @@ func Example_ginMiddleware() {
 
 func getUserHandler(c *gin.Context) {
 	// 从 context 获取 trace ID
-	traceID := tracing.GetTraceIDFromGin(c)
+	traceID := middleware.GetTraceIDFromGin(c)
 	log.Printf("Processing request with trace ID: %s", traceID)
 
 	// 创建子 span

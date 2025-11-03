@@ -1,7 +1,9 @@
-package tracing
+package middleware
 
 import (
 	"fmt"
+
+	"qi/internal/core/tracing"
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
@@ -10,10 +12,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// GinMiddleware Gin 框架的链路追踪中间件
-func GinMiddleware(serviceName string) gin.HandlerFunc {
+// TracingMiddleware Gin 框架的链路追踪中间件
+func TracingMiddleware(serviceName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tracer := GetGlobal()
+		tracer := tracing.GetGlobal()
 		if tracer == nil || !tracer.IsEnabled() {
 			c.Next()
 			return
@@ -26,7 +28,7 @@ func GinMiddleware(serviceName string) gin.HandlerFunc {
 				headers[key] = values[0]
 			}
 		}
-		ctx := ExtractHTTPHeaders(c.Request.Context(), headers)
+		ctx := tracing.ExtractHTTPHeaders(c.Request.Context(), headers)
 
 		// 构建 span 名称
 		spanName := fmt.Sprintf("%s %s", c.Request.Method, c.FullPath())
@@ -89,8 +91,8 @@ func GinMiddleware(serviceName string) gin.HandlerFunc {
 	}
 }
 
-// GinMiddlewareWithConfig 使用自定义配置的 Gin 中间件
-func GinMiddlewareWithConfig(config GinMiddlewareConfig) gin.HandlerFunc {
+// TracingMiddlewareWithConfig 使用自定义配置的 Gin 链路追踪中间件
+func TracingMiddlewareWithConfig(config TracingMiddlewareConfig) gin.HandlerFunc {
 	if config.Skipper == nil {
 		config.Skipper = defaultSkipper
 	}
@@ -106,7 +108,7 @@ func GinMiddlewareWithConfig(config GinMiddlewareConfig) gin.HandlerFunc {
 			return
 		}
 
-		tracer := GetGlobal()
+		tracer := tracing.GetGlobal()
 		if tracer == nil || !tracer.IsEnabled() {
 			c.Next()
 			return
@@ -119,7 +121,7 @@ func GinMiddlewareWithConfig(config GinMiddlewareConfig) gin.HandlerFunc {
 				headers[key] = values[0]
 			}
 		}
-		ctx := ExtractHTTPHeaders(c.Request.Context(), headers)
+		ctx := tracing.ExtractHTTPHeaders(c.Request.Context(), headers)
 
 		// 创建 span
 		spanName := config.SpanNameFormatter(c)
@@ -175,8 +177,8 @@ func GinMiddlewareWithConfig(config GinMiddlewareConfig) gin.HandlerFunc {
 	}
 }
 
-// GinMiddlewareConfig Gin 中间件配置
-type GinMiddlewareConfig struct {
+// TracingMiddlewareConfig Gin 链路追踪中间件配置
+type TracingMiddlewareConfig struct {
 	// Skipper 定义跳过中间件的函数
 	Skipper func(*gin.Context) bool
 
@@ -217,32 +219,33 @@ func HTTPClientMiddleware() func(req interface{}) {
 
 // GetTraceIDFromGin 从 Gin Context 获取 Trace ID
 func GetTraceIDFromGin(c *gin.Context) string {
-	return GetTraceID(c.Request.Context())
+	return tracing.GetTraceID(c.Request.Context())
 }
 
 // GetSpanIDFromGin 从 Gin Context 获取 Span ID
 func GetSpanIDFromGin(c *gin.Context) string {
-	return GetSpanID(c.Request.Context())
+	return tracing.GetSpanID(c.Request.Context())
 }
 
 // StartSpanFromGin 从 Gin Context 开始一个新的 span
-func StartSpanFromGin(c *gin.Context, spanName string, opts ...SpanOption) trace.Span {
-	ctx, span := StartSpan(c.Request.Context(), spanName, opts...)
+func StartSpanFromGin(c *gin.Context, spanName string, opts ...tracing.SpanOption) trace.Span {
+	ctx, span := tracing.StartSpan(c.Request.Context(), spanName, opts...)
 	c.Request = c.Request.WithContext(ctx)
 	return span
 }
 
 // RecordErrorToGin 记录错误到 Gin Context 的 span
 func RecordErrorToGin(c *gin.Context, err error) {
-	RecordError(c.Request.Context(), err)
+	tracing.RecordError(c.Request.Context(), err)
 }
 
 // AddEventToGin 添加事件到 Gin Context 的 span
 func AddEventToGin(c *gin.Context, name string, attrs ...attribute.KeyValue) {
-	AddEvent(c.Request.Context(), name, attrs...)
+	tracing.AddEvent(c.Request.Context(), name, attrs...)
 }
 
 // SetAttributesToGin 设置属性到 Gin Context 的 span
 func SetAttributesToGin(c *gin.Context, attrs ...attribute.KeyValue) {
-	SetAttributes(c.Request.Context(), attrs...)
+	tracing.SetAttributes(c.Request.Context(), attrs...)
 }
+

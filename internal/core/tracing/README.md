@@ -112,8 +112,9 @@ func main() {
     // 创建 Gin 应用
     r := gin.Default()
 
-    // 使用链路追踪中间件
-    r.Use(tracing.GinMiddleware("my-service"))
+    // 使用链路追踪中间件（注意：中间件已移至 qi/internal/middleware）
+    // 导入: "qi/internal/middleware"
+    // 使用: r.Use(middleware.TracingMiddleware("my-service"))
 
     // 定义路由
     r.GET("/users/:id", func(c *gin.Context) {
