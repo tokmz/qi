@@ -8,13 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"qi/internal/core/tracing"
-	"qi/internal/middleware"
 )
 
 // Example_basic 基础使用示例
@@ -72,91 +70,69 @@ func doWork(ctx context.Context) {
 	fmt.Println("Work completed")
 }
 
-// Example_ginMiddleware Gin 中间件使用示例
-func Example_ginMiddleware() {
+// Example_contextPropagation Context 传播示例
+func Example_contextPropagation() {
 	// 初始化 Tracer
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
 	tracing.InitGlobal(cfg)
 
-	// 创建 Gin 应用
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
+	ctx := context.Background()
+	
+	// 创建根 span
+	ctx, rootSpan := tracing.StartSpan(ctx, "process-order")
+	defer tracing.EndSpan(rootSpan)
 
-	// 使用链路追踪中间件
-	r.Use(middleware.TracingMiddleware("my-api"))
+	// 添加订单信息
+	tracing.SetAttributes(ctx,
+		attribute.String("order.id", "order-123"),
+		attribute.String("user.id", "user-456"),
+	)
 
-	// 定义路由
-	r.GET("/users/:id", getUserHandler)
-	r.POST("/users", createUserHandler)
-
-	// 启动服务器
-	go r.Run(":8080")
-
-	// 模拟请求
-	time.Sleep(100 * time.Millisecond)
-	resp, err := http.Get("http://localhost:8080/users/123")
-	if err != nil {
-		log.Printf("Request failed: %v", err)
+	// 调用子操作（context 自动传播）
+	if err := validateOrder(ctx); err != nil {
+		tracing.RecordError(ctx, err)
+		log.Printf("Validation failed: %v", err)
 		return
 	}
-	defer resp.Body.Close()
 
-	fmt.Printf("Response status: %d\n", resp.StatusCode)
+	if err := saveOrder(ctx); err != nil {
+		tracing.RecordError(ctx, err)
+		log.Printf("Save failed: %v", err)
+		return
+	}
+
+	fmt.Println("Order processed successfully")
 }
 
-func getUserHandler(c *gin.Context) {
-	// 从 context 获取 trace ID
-	traceID := middleware.GetTraceIDFromGin(c)
-	log.Printf("Processing request with trace ID: %s", traceID)
-
+func validateOrder(ctx context.Context) error {
 	// 创建子 span
-	ctx := c.Request.Context()
-	ctx, span := tracing.StartSpan(ctx, "getUserFromDB",
-		tracing.WithSpanKind(trace.SpanKindClient),
-	)
+	ctx, span := tracing.StartSpan(ctx, "validate-order")
 	defer tracing.EndSpan(span)
 
-	// 模拟数据库查询
-	userID := c.Param("id")
-	tracing.SetAttributes(ctx, tracing.UserIDKey.String(userID))
-
-	c.JSON(200, gin.H{
-		"id":   userID,
-		"name": "Alice",
-	})
-}
-
-func createUserHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	// 使用 SpanWrapper 简化代码
-	err := tracing.SpanWrapper(ctx, "createUser", func(ctx context.Context) error {
-		// 业务逻辑
-		return saveUserToDB(ctx)
-	})
-
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(201, gin.H{"message": "User created"})
-}
-
-func saveUserToDB(ctx context.Context) error {
-	_, span := tracing.StartSpan(ctx, "db.insert.users",
-		tracing.WithSpanKind(trace.SpanKindClient),
-		tracing.WithAttributes(
-			tracing.DBAttributes("mysql", "mydb", "INSERT", "users", "INSERT INTO users (name) VALUES (?)")...,
-		),
-	)
-	defer tracing.EndSpan(span)
-
-	// 模拟数据库操作
-	time.Sleep(50 * time.Millisecond)
-
+	// 模拟验证逻辑
+	time.Sleep(30 * time.Millisecond)
+	
+	tracing.SetAttributes(ctx, attribute.Bool("validation.passed", true))
 	return nil
+}
+
+func saveOrder(ctx context.Context) error {
+	// 使用 SpanWrapper 简化代码
+	return tracing.SpanWrapper(ctx, "save-order", func(ctx context.Context) error {
+		// 创建数据库 span
+		_, dbSpan := tracing.StartSpan(ctx, "db.insert.orders",
+			tracing.WithSpanKind(trace.SpanKindClient),
+			tracing.WithAttributes(
+				tracing.DBAttributes("mysql", "mydb", "INSERT", "orders", "INSERT INTO orders (id, user_id) VALUES (?, ?)")...,
+			),
+		)
+		defer tracing.EndSpan(dbSpan)
+
+		// 模拟数据库操作
+		time.Sleep(50 * time.Millisecond)
+		return nil
+	})
 }
 
 // Example_errorHandling 错误处理示例
