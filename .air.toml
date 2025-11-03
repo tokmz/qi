@@ -1,0 +1,71 @@
+# Air 配置文件 - Go 热重载工具
+# 文档: https://github.com/cosmtrek/air
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  # 需要监听的命令
+  args_bin = []
+  # 编译的二进制文件
+  bin = "./tmp/main"
+  # 编译命令
+  cmd = "go build -o ./tmp/main ./cmd/server/main.go"
+  # 延迟时间（毫秒）
+  delay = 1000
+  # 排除的目录
+  exclude_dir = ["assets", "tmp", "vendor", "testdata", "build", "logs", "uploads"]
+  # 排除的文件
+  exclude_file = []
+  # 排除的正则表达式
+  exclude_regex = ["_test.go"]
+  # 排除不变的文件
+  exclude_unchanged = false
+  # 只监听以下扩展名的文件
+  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml"]
+  # 包含的目录
+  include_dir = []
+  # 包含的文件
+  include_file = []
+  # 终止旧的二进制文件后等待的时间（毫秒）
+  kill_delay = "0s"
+  # 日志文件
+  log = "build-errors.log"
+  # 轮询间隔
+  poll = false
+  # 轮询间隔时间
+  poll_interval = 0
+  # 在二进制文件构建失败后是否继续运行
+  rerun = false
+  # 延迟运行（毫秒）
+  rerun_delay = 500
+  # 发送中断信号前等待时间
+  send_interrupt = false
+  # 发送终止信号前等待时间
+  stop_on_error = false
+
+[color]
+  # 自定义每个部分的颜色
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  # 主日志的级别
+  main_only = false
+  # 显示时间
+  time = false
+
+[misc]
+  # 清理屏幕
+  clean_on_exit = false
+
+[screen]
+  # 构建时清屏
+  clear_on_rebuild = false
+  # 保留滚动位置
+  keep_scroll = true
+
