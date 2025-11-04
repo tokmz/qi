@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"qi/internal/core/authz"
+	"qi/internal/middleware"
 )
 
 // Example_singleTenant 单租户模式示例
@@ -178,10 +179,10 @@ func Example_ginMiddleware() {
 	r := gin.New()
 
 	// 4. 自定义中间件配置
-	middlewareConfig := authz.DefaultMiddlewareConfig()
-	middlewareConfig.Skipper = authz.CombineSkippers(
-		authz.SkipPaths("/health", "/login"),
-		authz.SkipPrefixes("/public"),
+	middlewareConfig := middleware.DefaultAuthzMiddlewareConfig()
+	middlewareConfig.Skipper = middleware.AuthzCombineSkippers(
+		middleware.AuthzSkipPaths("/health", "/login"),
+		middleware.AuthzSkipPrefixes("/public"),
 	)
 	middlewareConfig.UserExtractor = func(c *gin.Context) string {
 		// 从上下文或请求头获取用户ID
@@ -192,7 +193,7 @@ func Example_ginMiddleware() {
 	}
 
 	// 5. 使用权限中间件
-	r.Use(authz.GlobalMiddleware(middlewareConfig))
+	r.Use(middleware.AuthzGlobalMiddleware(middlewareConfig))
 
 	// 6. 定义路由
 	r.GET("/api/v1/users", func(c *gin.Context) {
@@ -205,7 +206,7 @@ func Example_ginMiddleware() {
 
 	// 7. 需要特定角色的路由
 	admin := r.Group("/api/v1/admin")
-	admin.Use(authz.RequireRole("admin"))
+	admin.Use(middleware.AuthzRequireRole("admin"))
 	{
 		admin.GET("/dashboard", func(c *gin.Context) {
 			c.JSON(200, gin.H{"message": "admin dashboard"})
@@ -244,7 +245,7 @@ func Example_multiTenantGin() {
 	r := gin.New()
 
 	// 4. 多租户中间件配置
-	middlewareConfig := authz.DefaultMiddlewareConfig()
+	middlewareConfig := middleware.DefaultAuthzMiddlewareConfig()
 	middlewareConfig.TenantExtractor = func(c *gin.Context) string {
 		// 从 JWT 或请求头获取租户ID
 		if tenantID, exists := c.Get("tenant_id"); exists {
@@ -254,7 +255,7 @@ func Example_multiTenantGin() {
 	}
 
 	// 5. 使用权限中间件
-	r.Use(authz.GlobalMiddleware(middlewareConfig))
+	r.Use(middleware.AuthzGlobalMiddleware(middlewareConfig))
 
 	// 6. 定义路由
 	r.GET("/api/v1/projects", func(c *gin.Context) {
