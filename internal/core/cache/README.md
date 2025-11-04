@@ -16,6 +16,7 @@
 - ✅ **主动失效**: 数据变更时主动删除缓存
 - ✅ **批量操作**: Pipeline 批量读写优化
 - ✅ **统计监控**: 完整的缓存命中率统计
+- ✅ **链路追踪**: 基于 OpenTelemetry 的分布式追踪
 - ✅ **并发安全**: 所有操作线程安全
 - ✅ **类型安全**: 泛型支持和类型断言
 - ✅ **高质量代码**: 清晰的结构，完整的中文注释
@@ -24,6 +25,7 @@
 
 - [Redis v9](https://github.com/redis/go-redis) - Redis 客户端
 - [Singleflight](https://pkg.go.dev/golang.org/x/sync/singleflight) - 防缓存击穿
+- [OpenTelemetry](https://opentelemetry.io/) - 分布式链路追踪
 - [MessagePack](https://github.com/vmihailenco/msgpack) - 高效序列化（可选）
 
 ## 目录结构
@@ -225,6 +227,173 @@ func batchSet(manager *cache.Manager, users []*User) error {
     }
     
     return manager.SetMulti(ctx, items, 10*time.Minute)
+}
+```
+
+## 链路追踪集成
+
+cache 包内置了对 OpenTelemetry 分布式链路追踪的支持，可以帮助你监控和调试缓存操作。
+
+### 1. 启用链路追踪
+
+首先需要初始化全局 Tracer（使用 qi/internal/core/tracing 包）：
+
+```go
+import (
+    "qi/internal/core/cache"
+    "qi/internal/core/tracing"
+)
+
+func main() {
+    // 初始化链路追踪
+    tracingCfg := &tracing.Config{
+        Enabled:        true,
+        ServiceName:    "my-service",
+        ServiceVersion: "1.0.0",
+        Exporter: tracing.ExporterConfig{
+            Type: "otlp",
+            OTLP: tracing.OTLPConfig{
+                Endpoint: "localhost:4318",
+                Insecure: true,
+                Protocol: "http",
+            },
+        },
+    }
+    
+    if err := tracing.InitGlobal(tracingCfg); err != nil {
+        log.Fatal(err)
+    }
+    defer tracing.GetGlobal().Shutdown(context.Background())
+    
+    // 创建缓存管理器
+    cacheCfg := cache.DefaultConfig()
+    cacheCfg.Redis = redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+    
+    manager, err := cache.New(cacheCfg, &cache.DefaultLogger{})
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer manager.Close()
+    
+    // 使用缓存（自动记录 trace）
+    ctx := context.Background()
+    manager.Set(ctx, "user:123", userData, 10*time.Minute)
+}
+```
+
+### 2. 自动记录的 Span 属性
+
+cache 包会为每个操作自动创建 span，并记录以下属性：
+
+**基础属性：**
+- `cache.key`: 缓存键名
+- `cache.operation`: 操作类型（set/get/delete/get_or_load等）
+- `cache.ttl`: 过期时间
+
+**Get 操作特有属性：**
+- `cache.hit`: 是否命中缓存（true/false）
+- `cache.null_value`: 是否为空值缓存
+
+**GetOrLoad 操作特有属性：**
+- `cache.loaded_from_source`: 是否从数据源加载
+- `cache.singleflight_hit`: 是否命中 singleflight
+
+**批量操作特有属性：**
+- `cache.batch_size`: 批量操作的数量
+
+**Warmup 操作特有属性：**
+- `cache.warmup_items`: 预热项总数
+- `cache.warmup_loaded`: 实际加载数量
+
+### 3. 在业务代码中使用
+
+```go
+import (
+    "context"
+    "qi/internal/core/cache"
+    "qi/internal/core/tracing"
+)
+
+func getUserWithCache(ctx context.Context, userID int64) (*User, error) {
+    // 创建父 span
+    ctx, span := tracing.StartSpan(ctx, "getUserWithCache")
+    defer tracing.EndSpan(span)
+    
+    // 添加业务属性
+    tracing.SetAttributes(ctx, tracing.UserIDKey.Int64(userID))
+    
+    key := fmt.Sprintf("user:%d", userID)
+    var user User
+    
+    // cache.Get 会自动创建子 span
+    err := cacheManager.GetOrLoad(ctx, key, &user, func() (interface{}, error) {
+        // 这个 loader 也会在 trace 中显示
+        return loadUserFromDB(ctx, userID)
+    }, 10*time.Minute)
+    
+    if err != nil {
+        tracing.RecordError(ctx, err)
+        return nil, err
+    }
+    
+    return &user, nil
+}
+
+func loadUserFromDB(ctx context.Context, userID int64) (*User, error) {
+    // 创建数据库查询的 span
+    ctx, span := tracing.StartSpan(ctx, "db.query.users")
+    defer tracing.EndSpan(span)
+    
+    // 数据库查询逻辑...
+    return &User{ID: userID, Name: "Alice"}, nil
+}
+```
+
+### 4. Trace 层级结构示例
+
+启用链路追踪后，你会看到如下的 trace 结构：
+
+```
+getUserWithCache (150ms)
+├── cache.GetOrLoad (148ms)
+│   ├── cache.Get (2ms)          [cache.hit=false]
+│   └── loading from source (145ms)
+│       ├── cache.Set (3ms)
+│       └── db.query.users (140ms)
+```
+
+### 5. 监控缓存性能
+
+通过链路追踪，你可以：
+
+- 📊 **监控缓存命中率**：查看 `cache.hit` 属性统计
+- 🔍 **发现慢查询**：找出耗时的 `cache.GetOrLoad` 操作
+- 🚀 **优化性能**：识别哪些缓存键需要预热
+- 🐛 **调试问题**：追踪错误在分布式系统中的传播
+
+### 6. 配置建议
+
+```go
+// 生产环境：使用采样
+tracingCfg := &tracing.Config{
+    Enabled:     true,
+    ServiceName: "my-service",
+    Sampler: tracing.SamplerConfig{
+        Type:  "parent_based",  // 基于父 span 决定
+        Ratio: 0.1,             // 采样 10%
+    },
+}
+
+// 开发环境：记录所有 trace
+tracingCfg := &tracing.Config{
+    Enabled:     true,
+    ServiceName: "my-service-dev",
+    Sampler: tracing.SamplerConfig{
+        Type:  "always_on",     // 总是记录
+    },
+    Exporter: tracing.ExporterConfig{
+        Type: "stdout",         // 输出到控制台
+    },
 }
 ```
 

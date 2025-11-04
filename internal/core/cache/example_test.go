@@ -199,3 +199,45 @@ func Example_stats() {
 	fmt.Printf("Hit Rate: %.2f%%\n", stats.HitRate*100)
 }
 
+// Example_tracing 链路追踪示例
+func Example_tracing() {
+	// 注意：实际使用时需要先初始化 tracing.InitGlobal(cfg)
+	// 这里仅演示 cache 包如何与 tracing 集成
+	
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+		DB:   15,
+	})
+
+	cfg := cache.DefaultConfig()
+	cfg.Redis = rdb
+
+	manager, _ := cache.New(cfg, &cache.NoopLogger{})
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// cache 操作会自动创建 span 并记录以下信息：
+	// - cache.key: 缓存键
+	// - cache.operation: 操作类型
+	// - cache.hit: 是否命中（Get 操作）
+	// - cache.singleflight_hit: 是否命中 singleflight（GetOrLoad 操作）
+	
+	// Set 操作会创建 span: cache.Set
+	manager.Set(ctx, "user:123", &User{ID: 123, Name: "Alice", Age: 25}, 10*time.Minute)
+	
+	// Get 操作会创建 span: cache.Get，并记录 cache.hit=true
+	var user User
+	manager.Get(ctx, "user:123", &user)
+	
+	// GetOrLoad 操作会创建 span: cache.GetOrLoad
+	// 如果缓存未命中，会记录 cache.loaded_from_source=true
+	manager.GetOrLoad(ctx, "user:456", &user, func() (interface{}, error) {
+		// 从数据库加载（可以在这里创建子 span）
+		return &User{ID: 456, Name: "Bob", Age: 30}, nil
+	}, 10*time.Minute)
+
+	fmt.Println("Cache operations with tracing completed")
+	// Output: Cache operations with tracing completed
+}
+

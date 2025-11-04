@@ -8,7 +8,11 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
+	"qi/internal/core/tracing"
 )
 
 // 全局缓存管理器
@@ -128,15 +132,29 @@ func (m *Manager) Close() error {
 
 // Set 设置缓存
 func (m *Manager) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	// 创建 span
+	ctx, span := tracing.StartSpan(ctx, "cache.Set",
+		tracing.WithSpanKind(trace.SpanKindClient),
+		tracing.WithAttributes(
+			attribute.String("cache.key", key),
+			attribute.String("cache.operation", "set"),
+		),
+	)
+	defer tracing.EndSpan(span)
+
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
-		return ErrManagerAlreadyClosed
+		err := ErrManagerAlreadyClosed
+		tracing.RecordError(ctx, err)
+		return err
 	}
 	m.mu.RUnlock()
 
 	if value == nil {
-		return ErrNilValue
+		err := ErrNilValue
+		tracing.RecordError(ctx, err)
+		return err
 	}
 
 	// 序列化
@@ -144,7 +162,9 @@ func (m *Manager) Set(ctx context.Context, key string, value interface{}, ttl ti
 	if err != nil {
 		m.incrementError()
 		m.logger.Error("Failed to marshal value", "key", key, "error", err)
-		return fmt.Errorf("%w: %v", ErrSerializationFailed, err)
+		wrappedErr := fmt.Errorf("%w: %v", ErrSerializationFailed, err)
+		tracing.RecordError(ctx, wrappedErr)
+		return wrappedErr
 	}
 
 	// 构建完整的键
@@ -155,24 +175,41 @@ func (m *Manager) Set(ctx context.Context, key string, value interface{}, ttl ti
 		ttl = m.config.DefaultExpiration
 	}
 
+	// 添加 TTL 属性
+	tracing.SetAttributes(ctx, attribute.String("cache.ttl", ttl.String()))
+
 	err = m.rdb.Set(ctx, fullKey, data, ttl).Err()
 	if err != nil {
 		m.incrementError()
 		m.logger.Error("Failed to set cache", "key", key, "error", err)
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
 	m.incrementSets()
 	m.logger.Debug("Cache set", "key", key, "ttl", ttl)
+	tracing.SetSpanStatus(ctx, codes.Ok, "cache set successfully")
 	return nil
 }
 
 // Get 获取缓存
 func (m *Manager) Get(ctx context.Context, key string, dest interface{}) error {
+	// 创建 span
+	ctx, span := tracing.StartSpan(ctx, "cache.Get",
+		tracing.WithSpanKind(trace.SpanKindClient),
+		tracing.WithAttributes(
+			attribute.String("cache.key", key),
+			attribute.String("cache.operation", "get"),
+		),
+	)
+	defer tracing.EndSpan(span)
+
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
-		return ErrManagerAlreadyClosed
+		err := ErrManagerAlreadyClosed
+		tracing.RecordError(ctx, err)
+		return err
 	}
 	m.mu.RUnlock()
 
@@ -186,16 +223,22 @@ func (m *Manager) Get(ctx context.Context, key string, dest interface{}) error {
 	if err != nil {
 		if err == redis.Nil {
 			m.incrementMisses()
+			tracing.SetAttributes(ctx, attribute.Bool("cache.hit", false))
 			return ErrCacheMiss
 		}
 		m.incrementError()
 		m.logger.Error("Failed to get cache", "key", key, "error", err)
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
 	// 检查是否为空值标记
 	if isNullValue(data) {
 		m.incrementHits()
+		tracing.SetAttributes(ctx,
+			attribute.Bool("cache.hit", true),
+			attribute.Bool("cache.null_value", true),
+		)
 		return ErrCacheMiss
 	}
 
@@ -203,35 +246,55 @@ func (m *Manager) Get(ctx context.Context, key string, dest interface{}) error {
 	if err := m.serializer.Unmarshal(data, dest); err != nil {
 		m.incrementError()
 		m.logger.Error("Failed to unmarshal value", "key", key, "error", err)
-		return fmt.Errorf("%w: %v", ErrDeserializationFailed, err)
+		wrappedErr := fmt.Errorf("%w: %v", ErrDeserializationFailed, err)
+		tracing.RecordError(ctx, wrappedErr)
+		return wrappedErr
 	}
 
 	m.incrementHits()
 	m.logger.Debug("Cache hit", "key", key)
+	tracing.SetAttributes(ctx, attribute.Bool("cache.hit", true))
+	tracing.SetSpanStatus(ctx, codes.Ok, "cache hit")
 	return nil
 }
 
 // GetOrLoad 获取或加载（防缓存击穿）
 func (m *Manager) GetOrLoad(ctx context.Context, key string, dest interface{}, loader LoaderFunc, ttl time.Duration) error {
+	// 创建 span
+	ctx, span := tracing.StartSpan(ctx, "cache.GetOrLoad",
+		tracing.WithSpanKind(trace.SpanKindClient),
+		tracing.WithAttributes(
+			attribute.String("cache.key", key),
+			attribute.String("cache.operation", "get_or_load"),
+		),
+	)
+	defer tracing.EndSpan(span)
+
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
-		return ErrManagerAlreadyClosed
+		err := ErrManagerAlreadyClosed
+		tracing.RecordError(ctx, err)
+		return err
 	}
 	m.mu.RUnlock()
 
 	if loader == nil {
-		return ErrLoaderFuncRequired
+		err := ErrLoaderFuncRequired
+		tracing.RecordError(ctx, err)
+		return err
 	}
 
 	// 先尝试从缓存获取
 	err := m.Get(ctx, key, dest)
 	if err == nil {
+		tracing.SetAttributes(ctx, attribute.Bool("cache.loaded_from_source", false))
 		return nil // 缓存命中
 	}
 
 	if err != ErrCacheMiss {
 		// 其他错误，返回
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
@@ -241,9 +304,13 @@ func (m *Manager) GetOrLoad(ctx context.Context, key string, dest interface{}, l
 	v, err, shared := m.sf.Do(fullKey, func() (interface{}, error) {
 		m.incrementLoaderCalls()
 		
+		// 添加事件：开始加载数据
+		tracing.AddEvent(ctx, "loading from source")
+		
 		// 调用加载函数
 		value, err := loader()
 		if err != nil {
+			tracing.RecordError(ctx, err)
 			return nil, err
 		}
 
@@ -256,32 +323,55 @@ func (m *Manager) GetOrLoad(ctx context.Context, key string, dest interface{}, l
 	})
 
 	if err != nil {
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
 	if shared {
 		m.incrementSingleflightHits()
+		tracing.SetAttributes(ctx, attribute.Bool("cache.singleflight_hit", true))
+	} else {
+		tracing.SetAttributes(ctx, attribute.Bool("cache.singleflight_hit", false))
 	}
+
+	tracing.SetAttributes(ctx, attribute.Bool("cache.loaded_from_source", true))
 
 	// 将结果复制到 dest
 	data, err := m.serializer.Marshal(v)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrSerializationFailed, err)
+		wrappedErr := fmt.Errorf("%w: %v", ErrSerializationFailed, err)
+		tracing.RecordError(ctx, wrappedErr)
+		return wrappedErr
 	}
 
 	if err := m.serializer.Unmarshal(data, dest); err != nil {
-		return fmt.Errorf("%w: %v", ErrDeserializationFailed, err)
+		wrappedErr := fmt.Errorf("%w: %v", ErrDeserializationFailed, err)
+		tracing.RecordError(ctx, wrappedErr)
+		return wrappedErr
 	}
 
+	tracing.SetSpanStatus(ctx, codes.Ok, "data loaded successfully")
 	return nil
 }
 
 // Delete 删除缓存
 func (m *Manager) Delete(ctx context.Context, key string) error {
+	// 创建 span
+	ctx, span := tracing.StartSpan(ctx, "cache.Delete",
+		tracing.WithSpanKind(trace.SpanKindClient),
+		tracing.WithAttributes(
+			attribute.String("cache.key", key),
+			attribute.String("cache.operation", "delete"),
+		),
+	)
+	defer tracing.EndSpan(span)
+
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
-		return ErrManagerAlreadyClosed
+		err := ErrManagerAlreadyClosed
+		tracing.RecordError(ctx, err)
+		return err
 	}
 	m.mu.RUnlock()
 
@@ -293,11 +383,13 @@ func (m *Manager) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		m.incrementError()
 		m.logger.Error("Failed to delete cache", "key", key, "error", err)
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
 	m.incrementDeletes()
 	m.logger.Debug("Cache deleted", "key", key)
+	tracing.SetSpanStatus(ctx, codes.Ok, "cache deleted successfully")
 	return nil
 }
 
@@ -398,10 +490,22 @@ func (m *Manager) GetMulti(ctx context.Context, keys []string) (map[string][]byt
 
 // SetMulti 批量设置
 func (m *Manager) SetMulti(ctx context.Context, items map[string]interface{}, ttl time.Duration) error {
+	// 创建 span
+	ctx, span := tracing.StartSpan(ctx, "cache.SetMulti",
+		tracing.WithSpanKind(trace.SpanKindClient),
+		tracing.WithAttributes(
+			attribute.Int("cache.batch_size", len(items)),
+			attribute.String("cache.operation", "set_multi"),
+		),
+	)
+	defer tracing.EndSpan(span)
+
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
-		return ErrManagerAlreadyClosed
+		err := ErrManagerAlreadyClosed
+		tracing.RecordError(ctx, err)
+		return err
 	}
 	m.mu.RUnlock()
 
@@ -412,6 +516,8 @@ func (m *Manager) SetMulti(ctx context.Context, items map[string]interface{}, tt
 	if ttl <= 0 {
 		ttl = m.config.DefaultExpiration
 	}
+
+	tracing.SetAttributes(ctx, attribute.String("cache.ttl", ttl.String()))
 
 	// 使用 Pipeline 批量设置
 	pipe := m.rdb.Pipeline()
@@ -430,10 +536,12 @@ func (m *Manager) SetMulti(ctx context.Context, items map[string]interface{}, tt
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		m.incrementError()
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
 	atomic.AddInt64(&m.stats.sets, int64(len(items)))
+	tracing.SetSpanStatus(ctx, codes.Ok, fmt.Sprintf("%d items set successfully", len(items)))
 	return nil
 }
 
@@ -501,10 +609,22 @@ func (m *Manager) DeletePattern(ctx context.Context, pattern string) error {
 
 // Warmup 缓存预热
 func (m *Manager) Warmup(ctx context.Context, items []WarmupItem) error {
+	// 创建 span
+	ctx, span := tracing.StartSpan(ctx, "cache.Warmup",
+		tracing.WithSpanKind(trace.SpanKindClient),
+		tracing.WithAttributes(
+			attribute.Int("cache.warmup_items", len(items)),
+			attribute.String("cache.operation", "warmup"),
+		),
+	)
+	defer tracing.EndSpan(span)
+
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
-		return ErrManagerAlreadyClosed
+		err := ErrManagerAlreadyClosed
+		tracing.RecordError(ctx, err)
+		return err
 	}
 	m.mu.RUnlock()
 
@@ -513,6 +633,7 @@ func (m *Manager) Warmup(ctx context.Context, items []WarmupItem) error {
 	}
 
 	m.logger.Info("Starting cache warmup", "items", len(items))
+	tracing.AddEvent(ctx, "warmup started")
 
 	// 使用 Pipeline 批量设置
 	pipe := m.rdb.Pipeline()
@@ -538,10 +659,14 @@ func (m *Manager) Warmup(ctx context.Context, items []WarmupItem) error {
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		m.incrementError()
+		tracing.RecordError(ctx, err)
 		return err
 	}
 
 	m.logger.Info("Cache warmup completed", "loaded", count)
+	tracing.SetAttributes(ctx, attribute.Int("cache.warmup_loaded", count))
+	tracing.AddEvent(ctx, "warmup completed")
+	tracing.SetSpanStatus(ctx, codes.Ok, fmt.Sprintf("%d items warmed up", count))
 	return nil
 }
 
