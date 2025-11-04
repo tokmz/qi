@@ -248,4 +248,3 @@ func AddEventToGin(c *gin.Context, name string, attrs ...attribute.KeyValue) {
 func SetAttributesToGin(c *gin.Context, attrs ...attribute.KeyValue) {
 	tracing.SetAttributes(c.Request.Context(), attrs...)
 }
-

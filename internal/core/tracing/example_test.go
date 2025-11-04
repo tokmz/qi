@@ -78,7 +78,7 @@ func Example_contextPropagation() {
 	tracing.InitGlobal(cfg)
 
 	ctx := context.Background()
-	
+
 	// 创建根 span
 	ctx, rootSpan := tracing.StartSpan(ctx, "process-order")
 	defer tracing.EndSpan(rootSpan)
@@ -112,7 +112,7 @@ func validateOrder(ctx context.Context) error {
 
 	// 模拟验证逻辑
 	time.Sleep(30 * time.Millisecond)
-	
+
 	tracing.SetAttributes(ctx, attribute.Bool("validation.passed", true))
 	return nil
 }
