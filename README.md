@@ -335,13 +335,8 @@ defer c.Stop()
 - 支持角色继承
 - 动态权限配置
 - 细粒度权限控制
-- **支持多租户隔离**（适用于 SaaS 系统）
 
-#### 4.6.1 单租户模式（标准 RBAC）
-
-适用于单体应用，用户在同一个租户空间内。
-
-**Casbin 模型配置** (model.conf):
+**Casbin 模型配置** (`configs/casbin/model.conf`):
 ```ini
 [request_definition]
 r = sub, obj, act
@@ -359,7 +354,7 @@ e = some(where (p.eft == allow))
 m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
 ```
 
-**权限策略示例** (policy.csv):
+**权限策略示例** (`configs/casbin/policy.csv`):
 ```csv
 p, admin, /api/v1/users, *
 p, admin, /api/v1/projects, *
@@ -400,319 +395,58 @@ func CasbinMiddleware(enforcer *casbin.Enforcer) gin.HandlerFunc {
         c.Next()
     }
 }
-```
 
-#### 4.6.2 多租户模式（SaaS 系统）
-
-适用于 SaaS 应用，需要在租户间实现数据和权限隔离。
-
-**多租户 Casbin 模型配置** (model_tenant.conf):
-```ini
-[request_definition]
-# tenant: 租户ID, sub: 用户, obj: 资源, act: 操作
-r = tenant, sub, obj, act
-
-[policy_definition]
-# 权限策略包含租户维度
-p = tenant, sub, obj, act
-
-[role_definition]
-# 角色定义也包含租户维度
-g = _, _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-# 匹配租户、角色、资源和操作
-m = g(r.sub, p.sub, r.tenant) && r.tenant == p.tenant && r.obj == p.obj && r.act == p.act
-```
-
-**多租户权限策略示例** (policy_tenant.csv):
-```csv
-# 租户1的权限策略
-p, tenant_001, admin, /api/v1/users, *
-p, tenant_001, admin, /api/v1/projects, *
-p, tenant_001, admin, /api/v1/tasks, *
-p, tenant_001, member, /api/v1/projects, GET
-p, tenant_001, member, /api/v1/tasks, GET
-p, tenant_001, member, /api/v1/tasks, POST
-
-# 租户2的权限策略
-p, tenant_002, admin, /api/v1/users, *
-p, tenant_002, admin, /api/v1/projects, *
-p, tenant_002, member, /api/v1/projects, GET
-
-# 角色分配（包含租户维度）
-g, alice, admin, tenant_001
-g, bob, member, tenant_001
-g, charlie, admin, tenant_002
-g, david, member, tenant_002
-```
-
-**多租户使用示例**:
-```go
-// 多租户权限检查
-func CheckTenantPermission(enforcer *casbin.Enforcer, tenantID, user, resource, action string) bool {
-    ok, err := enforcer.Enforce(tenantID, user, resource, action)
-    if err != nil {
-        return false
-    }
-    return ok
-}
-
-// 多租户权限中间件
-func MultiTenantCasbinMiddleware(enforcer *casbin.Enforcer) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        // 从 JWT 或请求头获取租户ID和用户信息
-        tenantID := c.GetString("tenant_id")
-        userID := c.GetString("user_id")
-        path := c.Request.URL.Path
-        method := c.Request.Method
-        
-        // 验证租户ID
-        if tenantID == "" {
-            c.JSON(400, gin.H{"error": "缺少租户信息"})
-            c.Abort()
-            return
-        }
-        
-        // 检查权限（包含租户维度）
-        if ok := CheckTenantPermission(enforcer, tenantID, userID, path, method); !ok {
-            c.JSON(403, gin.H{"error": "权限不足"})
-            c.Abort()
-            return
-        }
-        
-        c.Next()
-    }
-}
-
-// 动态添加租户权限
-func AddTenantPermission(enforcer *casbin.Enforcer, tenantID, role, resource, action string) error {
-    _, err := enforcer.AddPolicy(tenantID, role, resource, action)
+// 动态添加权限
+func AddPermission(enforcer *casbin.Enforcer, role, resource, action string) error {
+    _, err := enforcer.AddPolicy(role, resource, action)
     return err
 }
 
-// 为用户分配租户角色
-func AssignTenantRole(enforcer *casbin.Enforcer, userID, role, tenantID string) error {
-    _, err := enforcer.AddRoleForUser(userID, role, tenantID)
+// 为用户分配角色
+func AssignRole(enforcer *casbin.Enforcer, userID, role string) error {
+    _, err := enforcer.AddRoleForUser(userID, role)
     return err
 }
 
-// 删除用户的租户角色
-func RemoveTenantRole(enforcer *casbin.Enforcer, userID, role, tenantID string) error {
-    _, err := enforcer.DeleteRoleForUser(userID, role, tenantID)
+// 删除用户角色
+func RemoveRole(enforcer *casbin.Enforcer, userID, role string) error {
+    _, err := enforcer.DeleteRoleForUser(userID, role)
     return err
 }
 
-// 获取用户在指定租户的所有角色
-func GetUserTenantRoles(enforcer *casbin.Enforcer, userID, tenantID string) ([]string, error) {
-    return enforcer.GetRolesForUserInDomain(userID, tenantID)
+// 获取用户的所有角色
+func GetUserRoles(enforcer *casbin.Enforcer, userID string) ([]string, error) {
+    return enforcer.GetRolesForUser(userID)
 }
 
-// 检查用户是否在租户中拥有角色
-func HasTenantRole(enforcer *casbin.Enforcer, userID, role, tenantID string) (bool, error) {
-    return enforcer.HasRoleForUser(userID, role, tenantID)
-}
-```
-
-#### 4.6.3 多租户数据隔离
-
-**数据库设计**:
-```sql
--- 用户表（跨租户）
-CREATE TABLE users (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    email VARCHAR(100) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 租户表
-CREATE TABLE tenants (
-    id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    status ENUM('active', 'suspended', 'deleted') DEFAULT 'active',
-    plan VARCHAR(20) DEFAULT 'free',  -- free/basic/pro/enterprise
-    max_users INT DEFAULT 10,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 租户成员关系表
-CREATE TABLE tenant_users (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    tenant_id VARCHAR(50) NOT NULL,
-    user_id BIGINT NOT NULL,
-    role VARCHAR(50) NOT NULL,  -- admin/member/viewer
-    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    UNIQUE KEY uk_tenant_user (tenant_id, user_id)
-);
-
--- 项目表（包含租户ID）
-CREATE TABLE projects (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    tenant_id VARCHAR(50) NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    status VARCHAR(20) DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
-    INDEX idx_tenant_id (tenant_id)
-);
-
--- 任务表（包含租户ID）
-CREATE TABLE tasks (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    tenant_id VARCHAR(50) NOT NULL,
-    project_id BIGINT NOT NULL,
-    title VARCHAR(200) NOT NULL,
-    description TEXT,
-    status VARCHAR(20) DEFAULT 'todo',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
-    FOREIGN KEY (project_id) REFERENCES projects(id),
-    INDEX idx_tenant_id (tenant_id),
-    INDEX idx_project_id (project_id)
-);
-```
-
-**数据访问控制**:
-```go
-// 基础 Repository 接口（包含租户上下文）
-type BaseRepository interface {
-    WithTenant(tenantID string) BaseRepository
-    GetTenant() string
-}
-
-// 项目 Repository 示例
-type ProjectRepository struct {
-    db       *gorm.DB
-    tenantID string
-}
-
-func NewProjectRepository(db *gorm.DB) *ProjectRepository {
-    return &ProjectRepository{db: db}
-}
-
-func (r *ProjectRepository) WithTenant(tenantID string) *ProjectRepository {
-    return &ProjectRepository{
-        db:       r.db,
-        tenantID: tenantID,
-    }
-}
-
-// 所有查询自动添加租户过滤
-func (r *ProjectRepository) FindByID(id int64) (*Project, error) {
-    var project Project
-    err := r.db.Where("id = ? AND tenant_id = ?", id, r.tenantID).First(&project).Error
-    return &project, err
-}
-
-func (r *ProjectRepository) List(page, pageSize int) ([]*Project, error) {
-    var projects []*Project
-    offset := (page - 1) * pageSize
-    err := r.db.Where("tenant_id = ?", r.tenantID).
-        Offset(offset).
-        Limit(pageSize).
-        Find(&projects).Error
-    return projects, err
-}
-
-func (r *ProjectRepository) Create(project *Project) error {
-    // 强制设置租户ID
-    project.TenantID = r.tenantID
-    return r.db.Create(project).Error
-}
-
-// 使用中间件自动注入租户上下文
-func TenantContextMiddleware() gin.HandlerFunc {
-    return func(c *gin.Context) {
-        tenantID := c.GetString("tenant_id")
-        if tenantID == "" {
-            c.JSON(400, gin.H{"error": "缺少租户信息"})
-            c.Abort()
-            return
-        }
-        
-        // 将租户ID存入上下文
-        c.Set("tenant_id", tenantID)
-        c.Next()
-    }
+// 检查用户是否拥有角色
+func HasRole(enforcer *casbin.Enforcer, userID, role string) (bool, error) {
+    return enforcer.HasRoleForUser(userID, role)
 }
 ```
 
-#### 4.6.4 多租户配置
-
-**配置文件** (config.yaml):
+**配置示例** (`configs/config.yaml`):
 ```yaml
 casbin:
-  # 模式：single（单租户）或 multi（多租户）
-  mode: multi
+  # 模型配置文件路径
+  model_path: configs/casbin/model.conf
   
-  # 单租户模式配置
-  single:
-    model_path: configs/casbin/model.conf
-    policy_path: configs/casbin/policy.csv
+  # 策略文件路径
+  policy_path: configs/casbin/policy.csv
   
-  # 多租户模式配置
-  multi:
-    model_path: configs/casbin/model_tenant.conf
-    policy_path: configs/casbin/policy_tenant.csv
-    
   # 数据库存储（推荐用于生产环境）
   adapter:
     type: gorm  # gorm/file
+    db_type: mysql
+    dsn: "user:password@tcp(localhost:3306)/casbin?charset=utf8mb4"
     table_name: casbin_rule
-    
+  
   # 是否自动加载策略
   auto_load: true
   
   # 策略更新间隔（秒）
   auto_load_interval: 60
-
-tenant:
-  # 是否启用多租户
-  enabled: true
-  
-  # 租户识别方式：subdomain（子域名）、header（请求头）、jwt（Token）
-  identifier: jwt
-  
-  # 子域名模式配置
-  subdomain:
-    domain: example.com  # {tenant}.example.com
-  
-  # 请求头模式配置
-  header:
-    key: X-Tenant-ID
-  
-  # JWT 模式配置（推荐）
-  jwt:
-    tenant_claim: tenant_id  # JWT 中的租户ID字段
-  
-  # 默认租户（用于开发测试）
-  default_tenant: tenant_001
 ```
-
-#### 4.6.5 应用场景对比
-
-| 特性 | 单租户模式 | 多租户模式 |
-|------|-----------|-----------|
-| **适用场景** | 企业内部系统 | SaaS 应用 |
-| **数据隔离** | 不需要 | 强隔离 |
-| **部署方式** | 独立部署 | 共享部署 |
-| **成本** | 较高 | 较低 |
-| **扩展性** | 垂直扩展 | 水平扩展 |
-| **定制化** | 容易 | 受限 |
-| **安全性** | 高 | 需额外保障 |
-| **复杂度** | 低 | 中高 |
-
-**选型建议**:
-- **单租户模式**: 企业内部管理系统、私有化部署项目
-- **多租户模式**: SaaS 产品、云服务平台、需要快速扩展的业务
 
 ## 5. API 设计规范
 
