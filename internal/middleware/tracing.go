@@ -15,12 +15,6 @@ import (
 // TracingMiddleware Gin 框架的链路追踪中间件
 func TracingMiddleware(serviceName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tracer := tracing.GetGlobal()
-		if tracer == nil || !tracer.IsEnabled() {
-			c.Next()
-			return
-		}
-
 		// 从请求头提取 trace context
 		headers := make(map[string]string)
 		for key, values := range c.Request.Header {
@@ -36,29 +30,30 @@ func TracingMiddleware(serviceName string) gin.HandlerFunc {
 			spanName = fmt.Sprintf("%s %s", c.Request.Method, c.Request.URL.Path)
 		}
 
-		// 创建 span
-		attrs := []attribute.KeyValue{
-			semconv.HTTPMethod(c.Request.Method),
-			semconv.HTTPURL(c.Request.URL.String()),
-			semconv.HTTPRoute(c.FullPath()),
-			semconv.HTTPScheme(c.Request.URL.Scheme),
-			semconv.HTTPTarget(c.Request.URL.Path),
-			semconv.NetHostName(c.Request.Host),
-			attribute.String("http.user_agent", c.Request.UserAgent()),
-			attribute.String("http.client_ip", c.ClientIP()),
+		// 创建 span 选项
+		opts := []tracing.SpanOption{
+			tracing.WithSpanKind(trace.SpanKindServer),
+			tracing.WithAttributes(
+				semconv.HTTPMethod(c.Request.Method),
+				semconv.HTTPURL(c.Request.URL.String()),
+				semconv.HTTPRoute(c.FullPath()),
+				semconv.HTTPScheme(c.Request.URL.Scheme),
+				semconv.HTTPTarget(c.Request.URL.Path),
+				semconv.NetHostName(c.Request.Host),
+				attribute.String("http.user_agent", c.Request.UserAgent()),
+				attribute.String("http.client_ip", c.ClientIP()),
+			),
 		}
 
 		// 添加端口信息（如果存在）
 		if port := c.Request.URL.Port(); port != "" {
-			attrs = append(attrs, attribute.String("net.host.port", port))
+			opts = append(opts, tracing.WithAttributes(
+				attribute.String("net.host.port", port),
+			))
 		}
 
-		ctx, span := tracer.GetTracer().Start(
-			ctx,
-			spanName,
-			trace.WithSpanKind(trace.SpanKindServer),
-			trace.WithAttributes(attrs...),
-		)
+		// 使用 tracing.StartSpan 创建 span
+		ctx, span := tracing.StartSpan(ctx, spanName, opts...)
 		defer span.End()
 
 		// 将 context 注入到 gin.Context
@@ -108,12 +103,6 @@ func TracingMiddlewareWithConfig(config TracingMiddlewareConfig) gin.HandlerFunc
 			return
 		}
 
-		tracer := tracing.GetGlobal()
-		if tracer == nil || !tracer.IsEnabled() {
-			c.Next()
-			return
-		}
-
 		// 提取 trace context
 		headers := make(map[string]string)
 		for key, values := range c.Request.Header {
@@ -125,28 +114,29 @@ func TracingMiddlewareWithConfig(config TracingMiddlewareConfig) gin.HandlerFunc
 
 		// 创建 span
 		spanName := config.SpanNameFormatter(c)
-		ctx, span := tracer.GetTracer().Start(
-			ctx,
-			spanName,
-			trace.WithSpanKind(trace.SpanKindServer),
-		)
-		defer span.End()
-
-		// 添加基础属性
-		span.SetAttributes(
+		
+		// 准备基础属性
+		attrs := []attribute.KeyValue{
 			semconv.HTTPMethod(c.Request.Method),
 			semconv.HTTPURL(c.Request.URL.String()),
 			semconv.HTTPRoute(c.FullPath()),
 			attribute.String("http.user_agent", c.Request.UserAgent()),
 			attribute.String("http.client_ip", c.ClientIP()),
-		)
+		}
 
 		// 添加自定义属性
 		if config.AttributesExtractor != nil {
-			for _, attr := range config.AttributesExtractor(c) {
-				span.SetAttributes(attr)
-			}
+			attrs = append(attrs, config.AttributesExtractor(c)...)
 		}
+
+		// 使用 tracing.StartSpan 创建 span
+		ctx, span := tracing.StartSpan(
+			ctx,
+			spanName,
+			tracing.WithSpanKind(trace.SpanKindServer),
+			tracing.WithAttributes(attrs...),
+		)
+		defer span.End()
 
 		c.Request = c.Request.WithContext(ctx)
 
