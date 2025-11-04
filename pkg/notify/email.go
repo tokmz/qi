@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/mail"
 	netsmtp "net/smtp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -186,8 +187,8 @@ func (e *EmailNotifier) buildEmailContent(message *Message) (string, error) {
 func (e *EmailNotifier) sendSMTP(from string, to []string, content string) error {
 	smtp := e.config.SMTP
 
-	// 连接服务器
-	addr := fmt.Sprintf("%s:%d", smtp.Host, smtp.Port)
+	// 连接服务器（使用 JoinHostPort 正确处理 IPv6 地址）
+	addr := net.JoinHostPort(smtp.Host, strconv.Itoa(smtp.Port))
 
 	var conn net.Conn
 	var err error
