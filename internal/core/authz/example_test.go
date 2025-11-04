@@ -380,4 +380,3 @@ func Example_roleManagement() {
 
 	fmt.Println("Role management completed")
 }
-
