@@ -11,12 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// 全局令牌管理器
-var (
-	globalManager *Manager
-	globalMu      sync.RWMutex
-)
-
 // Manager 令牌管理器
 type Manager struct {
 	config    *Config
@@ -61,40 +55,6 @@ func New(cfg *Config, logger Logger) (*Manager, error) {
 
 	logger.Info("Token manager created successfully")
 	return m, nil
-}
-
-// InitGlobal 初始化全局令牌管理器
-func InitGlobal(cfg *Config, rdb *redis.Client, logger Logger) error {
-	globalMu.Lock()
-	defer globalMu.Unlock()
-
-	// 设置 Redis 客户端
-	if cfg.Redis.Client == nil {
-		if rdb == nil {
-			return ErrRedisClientRequired
-		}
-		cfg.Redis.Client = rdb
-	}
-
-	manager, err := New(cfg, logger)
-	if err != nil {
-		return err
-	}
-
-	globalManager = manager
-	return nil
-}
-
-// GetGlobal 获取全局令牌管理器
-func GetGlobal() *Manager {
-	globalMu.RLock()
-	defer globalMu.RUnlock()
-
-	if globalManager == nil {
-		panic(ErrManagerNotInitialized)
-	}
-
-	return globalManager
 }
 
 // Close 关闭令牌管理器

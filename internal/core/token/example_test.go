@@ -231,8 +231,8 @@ func Example_customClaims() {
 	fmt.Printf("Permissions: %v\n", permissions)
 }
 
-// Example_globalManager 全局管理器示例
-func Example_globalManager() {
+// Example_basicManager 基础管理器示例
+func Example_basicManager() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 		DB:   0,
@@ -240,17 +240,16 @@ func Example_globalManager() {
 
 	cfg := token.DefaultConfig()
 	cfg.SecretKey = "your-secret-key-must-be-at-least-32-characters-long!"
+	cfg.Redis.Client = rdb
 
-	// 初始化全局管理器
-	err := token.InitGlobal(cfg, rdb, nil)
+	// 创建管理器
+	manager, err := token.New(cfg, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer manager.Close()
 
 	ctx := context.Background()
-
-	// 在任何地方使用全局管理器
-	manager := token.GetGlobal()
 
 	pair, err := manager.GenerateTokenPair(ctx, "user-123", nil)
 	if err != nil {

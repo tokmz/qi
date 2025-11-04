@@ -35,8 +35,9 @@ func Example_basic() {
 		},
 	}
 
-	// 2. 初始化全局 Tracer
-	if err := tracing.InitGlobal(cfg); err != nil {
+	// 2. 创建 Tracer
+	tracer, err := tracing.New(cfg)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -55,7 +56,6 @@ func Example_basic() {
 	doWork(ctx)
 
 	// 6. 关闭 Tracer
-	tracer := tracing.GetGlobal()
 	_ = tracer.Shutdown(context.Background())
 }
 
@@ -75,7 +75,7 @@ func Example_contextPropagation() {
 	// 初始化 Tracer
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 
@@ -139,7 +139,7 @@ func saveOrder(ctx context.Context) error {
 func Example_errorHandling() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 	ctx, span := tracing.StartSpan(ctx, "error-example")
@@ -168,7 +168,7 @@ func operationThatMightFail(ctx context.Context) error {
 func Example_httpClient() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 
@@ -226,7 +226,7 @@ func callRemoteAPI(ctx context.Context, url string) error {
 func Example_databaseQuery() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 
@@ -275,7 +275,7 @@ func queryUsers(ctx context.Context, status string) ([]User, error) {
 func Example_cacheOperation() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 
@@ -339,7 +339,7 @@ func saveToCache(ctx context.Context, key, value string) {
 func Example_asyncOperation() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 	ctx, span := tracing.StartSpan(ctx, "async-example")
@@ -362,7 +362,7 @@ func Example_asyncOperation() {
 func Example_customAttributes() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 	ctx, span := tracing.StartSpan(ctx, "custom-attributes-example")
@@ -389,7 +389,7 @@ func Example_customAttributes() {
 func Example_spanWrapper() {
 	cfg := tracing.DefaultConfig()
 	cfg.Exporter.Type = "stdout"
-	tracing.InitGlobal(cfg)
+	_, _ = tracing.New(cfg)
 
 	ctx := context.Background()
 

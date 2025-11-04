@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -32,9 +33,10 @@ func WithSpanKind(kind trace.SpanKind) SpanOption {
 }
 
 // StartSpan 开始一个新的 span
+// 使用 OpenTelemetry 的全局 TracerProvider
 func StartSpan(ctx context.Context, spanName string, opts ...SpanOption) (context.Context, trace.Span) {
-	tracer := GetGlobal()
-	if tracer == nil || !tracer.IsEnabled() {
+	tracer := otel.GetTracerProvider().Tracer("")
+	if tracer == nil {
 		return ctx, trace.SpanFromContext(ctx)
 	}
 
@@ -54,7 +56,7 @@ func StartSpan(ctx context.Context, spanName string, opts ...SpanOption) (contex
 		spanOpts = append(spanOpts, trace.WithAttributes(cfg.attributes...))
 	}
 
-	return tracer.GetTracer().Start(ctx, spanName, spanOpts...)
+	return tracer.Start(ctx, spanName, spanOpts...)
 }
 
 // StartSpanFromContext 从上下文开始一个新的 span

@@ -21,12 +21,6 @@ type Scheduler struct {
 	running  bool
 }
 
-var (
-	// globalScheduler 全局调度器实例
-	globalScheduler *Scheduler
-	once            sync.Once
-)
-
 // New 创建新的调度器实例
 func New(cfg *Config, logger Logger) (*Scheduler, error) {
 	if cfg == nil {
@@ -99,20 +93,6 @@ func New(cfg *Config, logger Logger) (*Scheduler, error) {
 	}
 
 	return s, nil
-}
-
-// InitGlobal 初始化全局调度器（单例模式）
-func InitGlobal(cfg *Config, logger Logger) error {
-	var err error
-	once.Do(func() {
-		globalScheduler, err = New(cfg, logger)
-	})
-	return err
-}
-
-// GetGlobal 获取全局调度器实例
-func GetGlobal() *Scheduler {
-	return globalScheduler
 }
 
 // RegisterJob 注册任务

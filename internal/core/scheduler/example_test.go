@@ -332,14 +332,15 @@ func Example_errorHandling() {
 	}
 }
 
-// Example_globalScheduler 使用全局调度器示例
-func Example_globalScheduler() {
-	// 初始化全局调度器
+// Example_basicScheduler 基础调度器示例
+func Example_basicScheduler() {
+	// 创建调度器
 	cfg := scheduler.DefaultConfig()
-	scheduler.InitGlobal(cfg, &scheduler.DefaultLogger{})
-
-	// 获取全局调度器
-	sched := scheduler.GetGlobal()
+	sched, err := scheduler.New(cfg, &scheduler.DefaultLogger{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer sched.Stop()
 
 	// 注册任务
 	sched.RegisterJobFunc("global-job", func(ctx context.Context) error {

@@ -6,9 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
@@ -23,12 +21,6 @@ type Tracer struct {
 	tracer   trace.Tracer
 	mu       sync.RWMutex
 }
-
-var (
-	// globalTracer 全局 Tracer 实例
-	globalTracer *Tracer
-	once         sync.Once
-)
 
 // New 创建新的 Tracer 实例
 func New(cfg *Config) (*Tracer, error) {
@@ -59,37 +51,6 @@ func New(cfg *Config) (*Tracer, error) {
 	}
 
 	return t, nil
-}
-
-// InitGlobal 初始化全局 Tracer（单例模式）
-func InitGlobal(cfg *Config) error {
-	var err error
-	once.Do(func() {
-		globalTracer, err = New(cfg)
-		if err != nil {
-			return
-		}
-
-		// 设置全局 TracerProvider
-		if globalTracer.provider != nil {
-			otel.SetTracerProvider(globalTracer.provider)
-
-			// 设置全局 Propagator（支持 W3C Trace Context）
-			otel.SetTextMapPropagator(
-				propagation.NewCompositeTextMapPropagator(
-					propagation.TraceContext{}, // W3C Trace Context
-					propagation.Baggage{},      // W3C Baggage
-				),
-			)
-		}
-	})
-
-	return err
-}
-
-// GetGlobal 获取全局 Tracer 实例
-func GetGlobal() *Tracer {
-	return globalTracer
 }
 
 // initProvider 初始化 TracerProvider
