@@ -317,4 +317,3 @@ func (e *EmailNotifier) Close() error {
 	// 邮件通知器无需特殊清理
 	return nil
 }
-

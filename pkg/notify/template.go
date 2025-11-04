@@ -321,9 +321,9 @@ const ResetPasswordEmailTemplate = `
 // RegisterBuiltinTemplates 注册内置模板
 func RegisterBuiltinTemplates(tm *TemplateManager) error {
 	templates := map[string]string{
-		"welcome":          WelcomeEmailTemplate,
-		"verification":     VerificationEmailTemplate,
-		"reset_password":   ResetPasswordEmailTemplate,
+		"welcome":        WelcomeEmailTemplate,
+		"verification":   VerificationEmailTemplate,
+		"reset_password": ResetPasswordEmailTemplate,
 	}
 
 	for name, content := range templates {
@@ -334,4 +334,3 @@ func RegisterBuiltinTemplates(tm *TemplateManager) error {
 
 	return nil
 }
-
