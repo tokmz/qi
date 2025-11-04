@@ -17,8 +17,7 @@ func Example_basic() {
 	}
 
 	// 2. 创建配置管理器
-	logger := &config.DefaultLogger{}
-	mgr, err := config.New(opts, logger)
+	mgr, err := config.New(opts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -42,7 +41,7 @@ func Example_withEnvironment() {
 		AllowEmptyEnv: false,
 	}
 
-	mgr, _ := config.New(opts, nil) // 不使用日志
+	mgr, _ := config.New(opts) // 不使用日志
 
 	// 读取配置（会自动从环境变量 APP_SERVER_PORT 读取）
 	port := mgr.GetInt("server.port")
@@ -58,8 +57,7 @@ func Example_autoReload() {
 		ReloadDebounce: 500 * time.Millisecond,
 	}
 
-	logger := &config.DefaultLogger{}
-	mgr, _ := config.New(opts, logger)
+	mgr, _ := config.New(opts)
 
 	// 注册配置变化回调
 	mgr.OnChange(func(event *config.ChangeEvent) {
@@ -92,7 +90,7 @@ func Example_unmarshal() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 解析整个配置
 	var appCfg AppConfig
@@ -115,7 +113,7 @@ func Example_unmarshalKey() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 只解析 server 部分
 	var serverCfg ServerConfig
@@ -132,7 +130,7 @@ func Example_globalManager() {
 	opts := config.DefaultOptions()
 	opts.ConfigFile = "./testdata/config.yaml"
 
-	if err := config.InitGlobal(opts, &config.DefaultLogger{}); err != nil {
+	if err := config.InitGlobal(opts); err != nil {
 		log.Fatal(err)
 	}
 
@@ -151,7 +149,7 @@ func Example_multipleFormats() {
 		ConfigFile: "./testdata/config.yaml",
 		ConfigType: "yaml",
 	}
-	yamlMgr, _ := config.New(yamlOpts, nil)
+	yamlMgr, _ := config.New(yamlOpts)
 	fmt.Println("YAML:", yamlMgr.GetString("app.name"))
 
 	// JSON 格式
@@ -159,7 +157,7 @@ func Example_multipleFormats() {
 		ConfigFile: "./testdata/config.json",
 		ConfigType: "json",
 	}
-	jsonMgr, _ := config.New(jsonOpts, nil)
+	jsonMgr, _ := config.New(jsonOpts)
 	fmt.Println("JSON:", jsonMgr.GetString("app.name"))
 
 	// TOML 格式
@@ -167,7 +165,7 @@ func Example_multipleFormats() {
 		ConfigFile: "./testdata/config.toml",
 		ConfigType: "toml",
 	}
-	tomlMgr, _ := config.New(tomlOpts, nil)
+	tomlMgr, _ := config.New(tomlOpts)
 	fmt.Println("TOML:", tomlMgr.GetString("app.name"))
 }
 
@@ -177,7 +175,7 @@ func Example_setDefaults() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 设置默认值
 	mgr.SetDefault("server.timeout", 30)
@@ -196,7 +194,7 @@ func Example_runtimeSet() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 运行时设置配置（不会写入文件）
 	mgr.Set("app.name", "NewAppName")
@@ -215,7 +213,7 @@ func Example_checkKey() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 检查配置键是否存在
 	if mgr.IsSet("app.name") {
@@ -237,7 +235,7 @@ func Example_typeConversion() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 字符串
 	name := mgr.GetString("app.name")
@@ -270,7 +268,7 @@ func Example_concurrentAccess() {
 		ConfigFile: "./testdata/config.yaml",
 	}
 
-	mgr, _ := config.New(opts, nil)
+	mgr, _ := config.New(opts)
 
 	// 并发读取配置（线程安全）
 	for i := 0; i < 10; i++ {
@@ -291,7 +289,7 @@ func Example_multipleCallbacks() {
 		AutoReload: true,
 	}
 
-	mgr, _ := config.New(opts, &config.DefaultLogger{})
+	mgr, _ := config.New(opts)
 
 	// 注册多个回调
 	mgr.OnChange(func(event *config.ChangeEvent) {
@@ -316,7 +314,7 @@ func Example_manualReload() {
 		AutoReload: false, // 不自动重载
 	}
 
-	mgr, _ := config.New(opts, &config.DefaultLogger{})
+	mgr, _ := config.New(opts)
 
 	// 读取初始配置
 	initialName := mgr.GetString("app.name")

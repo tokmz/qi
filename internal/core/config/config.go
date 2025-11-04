@@ -14,7 +14,6 @@ import (
 type Manager struct {
 	viper     *viper.Viper
 	options   *Options
-	logger    Logger
 	callbacks []OnChangeCallback
 	mu        sync.RWMutex
 	watching  bool
@@ -28,7 +27,7 @@ var (
 )
 
 // New 创建新的配置管理器
-func New(opts *Options, logger Logger) (*Manager, error) {
+func New(opts *Options) (*Manager, error) {
 	if opts == nil {
 		opts = DefaultOptions()
 	}
@@ -36,7 +35,6 @@ func New(opts *Options, logger Logger) (*Manager, error) {
 	m := &Manager{
 		viper:     viper.New(),
 		options:   opts,
-		logger:    logger,
 		callbacks: make([]OnChangeCallback, 0),
 		watching:  false,
 	}
@@ -50,10 +48,10 @@ func New(opts *Options, logger Logger) (*Manager, error) {
 }
 
 // InitGlobal 初始化全局配置管理器（单例模式）
-func InitGlobal(opts *Options, logger Logger) error {
+func InitGlobal(opts *Options) error {
 	var err error
 	once.Do(func() {
-		globalManager, err = New(opts, logger)
+		globalManager, err = New(opts)
 	})
 	return err
 }
@@ -101,10 +99,6 @@ func (m *Manager) initialize() error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	if m.logger != nil {
-		m.logger.Info(fmt.Sprintf("Config loaded from: %s", m.viper.ConfigFileUsed()))
-	}
-
 	// 启动自动重载
 	if m.options.AutoReload {
 		if err := m.StartWatching(); err != nil {
@@ -122,10 +116,6 @@ func (m *Manager) Reload() error {
 
 	if err := m.viper.ReadInConfig(); err != nil {
 		return fmt.Errorf("failed to reload config: %w", err)
-	}
-
-	if m.logger != nil {
-		m.logger.Info("Config reloaded")
 	}
 
 	// 触发回调
@@ -328,9 +318,7 @@ func (m *Manager) triggerCallbacks(event *ChangeEvent) {
 			go func(cb OnChangeCallback) {
 				defer func() {
 					if r := recover(); r != nil {
-						if m.logger != nil {
-							m.logger.Error(fmt.Sprintf("Config callback panic: %v", r))
-						}
+						// 忽略 panic，避免影响其他回调
 					}
 				}()
 				cb(event)
@@ -355,10 +343,6 @@ func (m *Manager) StartWatching() error {
 		}
 
 		m.debounce = time.AfterFunc(m.options.ReloadDebounce, func() {
-			if m.logger != nil {
-				m.logger.Info("Config file changed, reloading...")
-			}
-
 			event := &ChangeEvent{
 				Name: e.Name,
 				Op:   e.Op.String(),
@@ -372,10 +356,6 @@ func (m *Manager) StartWatching() error {
 
 	m.viper.WatchConfig()
 	m.watching = true
-
-	if m.logger != nil {
-		m.logger.Info("Started watching config file")
-	}
 
 	return nil
 }
@@ -395,10 +375,6 @@ func (m *Manager) StopWatching() error {
 	}
 
 	m.watching = false
-
-	if m.logger != nil {
-		m.logger.Info("Stopped watching config file")
-	}
 
 	return nil
 }

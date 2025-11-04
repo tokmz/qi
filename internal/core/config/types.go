@@ -64,14 +64,6 @@ type ChangeEvent struct {
 	Error error
 }
 
-// Logger 日志接口
-type Logger interface {
-	Info(msg string)
-	Warn(msg string)
-	Error(msg string)
-	Debug(msg string)
-}
-
 // ConfigFormat 配置文件格式
 type ConfigFormat string
 
