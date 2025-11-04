@@ -164,6 +164,7 @@ package main
 import (
     "github.com/gin-gonic/gin"
     "qi/internal/core/authz"
+    "qi/internal/middleware"
 )
 
 func main() {
@@ -175,7 +176,7 @@ func main() {
     r := gin.Default()
 
     // 3. 使用权限中间件
-    r.Use(authz.GlobalMiddleware())
+    r.Use(middleware.AuthzGlobalMiddleware())
 
     // 4. 定义路由
     r.GET("/api/v1/users", func(c *gin.Context) {
@@ -190,12 +191,12 @@ func main() {
 
 ```go
 // 创建自定义配置
-middlewareConfig := authz.DefaultMiddlewareConfig()
+middlewareConfig := middleware.DefaultAuthzMiddlewareConfig()
 
 // 跳过某些路径
-middlewareConfig.Skipper = authz.CombineSkippers(
-    authz.SkipPaths("/health", "/login"),
-    authz.SkipPrefixes("/public"),
+middlewareConfig.Skipper = middleware.AuthzCombineSkippers(
+    middleware.AuthzSkipPaths("/health", "/login"),
+    middleware.AuthzSkipPrefixes("/public"),
 )
 
 // 自定义用户提取器
@@ -215,7 +216,7 @@ middlewareConfig.TenantExtractor = func(c *gin.Context) string {
 }
 
 // 使用自定义配置
-r.Use(authz.GlobalMiddleware(middlewareConfig))
+r.Use(middleware.AuthzGlobalMiddleware(middlewareConfig))
 ```
 
 ### 角色中间件
@@ -223,7 +224,7 @@ r.Use(authz.GlobalMiddleware(middlewareConfig))
 ```go
 // 要求 admin 角色
 admin := r.Group("/api/v1/admin")
-admin.Use(authz.RequireRole("admin"))
+admin.Use(middleware.AuthzRequireRole("admin"))
 {
     admin.GET("/dashboard", adminDashboard)
     admin.GET("/users", adminUsers)
@@ -231,14 +232,14 @@ admin.Use(authz.RequireRole("admin"))
 
 // 要求任意一个角色
 moderator := r.Group("/api/v1/moderate")
-moderator.Use(authz.RequireAnyRole("admin", "moderator"))
+moderator.Use(middleware.AuthzRequireAnyRole("admin", "moderator"))
 {
     moderator.POST("/review", reviewContent)
 }
 
 // 要求所有角色
 special := r.Group("/api/v1/special")
-special.Use(authz.RequireAllRoles("admin", "auditor"))
+special.Use(middleware.AuthzRequireAllRoles("admin", "auditor"))
 {
     special.GET("/sensitive", sensitiveData)
 }
@@ -384,9 +385,12 @@ internal/core/authz/
 ├── enforcer.go         # 统一的权限管理器
 ├── single.go           # 单租户模式实现
 ├── multi.go            # 多租户模式实现
-├── middleware.go       # Gin 中间件
 ├── example_test.go     # 示例代码
 └── README.md           # 文档
+
+internal/middleware/
+├── tracing.go          # 链路追踪中间件
+└── authz.go            # 权限检查中间件（从 authz 包移动）
 ```
 
 ## 代码质量

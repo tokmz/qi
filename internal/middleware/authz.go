@@ -1,13 +1,15 @@
-package authz
+package middleware
 
 import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"qi/internal/core/authz"
 )
 
-// MiddlewareConfig 中间件配置
-type MiddlewareConfig struct {
+// AuthzMiddlewareConfig 权限中间件配置
+type AuthzMiddlewareConfig struct {
 	// Skipper 定义跳过中间件的函数
 	Skipper func(c *gin.Context) bool
 
@@ -33,9 +35,9 @@ type MiddlewareConfig struct {
 	ErrorHandler func(c *gin.Context, err error)
 }
 
-// DefaultMiddlewareConfig 返回默认中间件配置
-func DefaultMiddlewareConfig() *MiddlewareConfig {
-	return &MiddlewareConfig{
+// DefaultAuthzMiddlewareConfig 返回默认权限中间件配置
+func DefaultAuthzMiddlewareConfig() *AuthzMiddlewareConfig {
+	return &AuthzMiddlewareConfig{
 		Skipper: func(c *gin.Context) bool {
 			return false
 		},
@@ -77,9 +79,9 @@ func DefaultMiddlewareConfig() *MiddlewareConfig {
 	}
 }
 
-// Middleware 创建权限检查中间件
-func Middleware(manager *Manager, config ...*MiddlewareConfig) gin.HandlerFunc {
-	cfg := DefaultMiddlewareConfig()
+// AuthzMiddleware 创建权限检查中间件
+func AuthzMiddleware(manager *authz.Manager, config ...*AuthzMiddlewareConfig) gin.HandlerFunc {
+	cfg := DefaultAuthzMiddlewareConfig()
 	if len(config) > 0 && config[0] != nil {
 		cfg = config[0]
 	}
@@ -110,7 +112,7 @@ func Middleware(manager *Manager, config ...*MiddlewareConfig) gin.HandlerFunc {
 		var err error
 
 		// 根据模式检查权限
-		if manager.GetMode() == ModeSingle {
+		if manager.GetMode() == authz.ModeSingle {
 			allowed, err = manager.Single().CheckPermission(userID, resource, action)
 		} else {
 			tenantID := cfg.TenantExtractor(c)
@@ -146,10 +148,10 @@ func Middleware(manager *Manager, config ...*MiddlewareConfig) gin.HandlerFunc {
 	}
 }
 
-// GlobalMiddleware 使用全局管理器创建中间件
-func GlobalMiddleware(config ...*MiddlewareConfig) gin.HandlerFunc {
+// AuthzGlobalMiddleware 使用全局管理器创建中间件
+func AuthzGlobalMiddleware(config ...*AuthzMiddlewareConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := GetGlobal()
+		manager := authz.GetGlobal()
 		if manager == nil {
 			c.JSON(500, gin.H{
 				"code":    500,
@@ -159,14 +161,14 @@ func GlobalMiddleware(config ...*MiddlewareConfig) gin.HandlerFunc {
 			return
 		}
 
-		Middleware(manager, config...)(c)
+		AuthzMiddleware(manager, config...)(c)
 	}
 }
 
-// SkipperFunc 跳过检查的辅助函数
+// AuthzSkipper 跳过检查的辅助函数
 
-// SkipPrefixes 跳过指定前缀的路径
-func SkipPrefixes(prefixes ...string) func(c *gin.Context) bool {
+// AuthzSkipPrefixes 跳过指定前缀的路径
+func AuthzSkipPrefixes(prefixes ...string) func(c *gin.Context) bool {
 	return func(c *gin.Context) bool {
 		path := c.Request.URL.Path
 		for _, prefix := range prefixes {
@@ -178,8 +180,8 @@ func SkipPrefixes(prefixes ...string) func(c *gin.Context) bool {
 	}
 }
 
-// SkipPaths 跳过指定的路径
-func SkipPaths(paths ...string) func(c *gin.Context) bool {
+// AuthzSkipPaths 跳过指定的路径
+func AuthzSkipPaths(paths ...string) func(c *gin.Context) bool {
 	pathMap := make(map[string]bool)
 	for _, p := range paths {
 		pathMap[p] = true
@@ -189,8 +191,8 @@ func SkipPaths(paths ...string) func(c *gin.Context) bool {
 	}
 }
 
-// SkipMethods 跳过指定的 HTTP 方法
-func SkipMethods(methods ...string) func(c *gin.Context) bool {
+// AuthzSkipMethods 跳过指定的 HTTP 方法
+func AuthzSkipMethods(methods ...string) func(c *gin.Context) bool {
 	methodMap := make(map[string]bool)
 	for _, m := range methods {
 		methodMap[strings.ToUpper(m)] = true
@@ -200,8 +202,8 @@ func SkipMethods(methods ...string) func(c *gin.Context) bool {
 	}
 }
 
-// CombineSkippers 组合多个跳过函数
-func CombineSkippers(skippers ...func(c *gin.Context) bool) func(c *gin.Context) bool {
+// AuthzCombineSkippers 组合多个跳过函数
+func AuthzCombineSkippers(skippers ...func(c *gin.Context) bool) func(c *gin.Context) bool {
 	return func(c *gin.Context) bool {
 		for _, skipper := range skippers {
 			if skipper != nil && skipper(c) {
@@ -212,10 +214,10 @@ func CombineSkippers(skippers ...func(c *gin.Context) bool) func(c *gin.Context)
 	}
 }
 
-// RequireRole 要求用户拥有指定角色的中间件
-func RequireRole(role string) gin.HandlerFunc {
+// AuthzRequireRole 要求用户拥有指定角色的中间件
+func AuthzRequireRole(role string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := GetGlobal()
+		manager := authz.GetGlobal()
 		if manager == nil {
 			c.JSON(500, gin.H{
 				"code":    500,
@@ -239,7 +241,7 @@ func RequireRole(role string) gin.HandlerFunc {
 		var hasRole bool
 		var err error
 
-		if manager.GetMode() == ModeSingle {
+		if manager.GetMode() == authz.ModeSingle {
 			hasRole, err = manager.Single().HasRoleForUser(uid, role)
 		} else {
 			tenantID, exists := c.Get("tenant_id")
@@ -279,10 +281,10 @@ func RequireRole(role string) gin.HandlerFunc {
 	}
 }
 
-// RequireAnyRole 要求用户拥有任意一个指定角色的中间件
-func RequireAnyRole(roles ...string) gin.HandlerFunc {
+// AuthzRequireAnyRole 要求用户拥有任意一个指定角色的中间件
+func AuthzRequireAnyRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := GetGlobal()
+		manager := authz.GetGlobal()
 		if manager == nil {
 			c.JSON(500, gin.H{
 				"code":    500,
@@ -306,7 +308,7 @@ func RequireAnyRole(roles ...string) gin.HandlerFunc {
 		var userRoles []string
 		var err error
 
-		if manager.GetMode() == ModeSingle {
+		if manager.GetMode() == authz.ModeSingle {
 			userRoles, err = manager.Single().GetRolesForUser(uid)
 		} else {
 			tenantID, exists := c.Get("tenant_id")
@@ -360,10 +362,10 @@ func RequireAnyRole(roles ...string) gin.HandlerFunc {
 	}
 }
 
-// RequireAllRoles 要求用户拥有所有指定角色的中间件
-func RequireAllRoles(roles ...string) gin.HandlerFunc {
+// AuthzRequireAllRoles 要求用户拥有所有指定角色的中间件
+func AuthzRequireAllRoles(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := GetGlobal()
+		manager := authz.GetGlobal()
 		if manager == nil {
 			c.JSON(500, gin.H{
 				"code":    500,
@@ -389,7 +391,7 @@ func RequireAllRoles(roles ...string) gin.HandlerFunc {
 			var hasRole bool
 			var err error
 
-			if manager.GetMode() == ModeSingle {
+			if manager.GetMode() == authz.ModeSingle {
 				hasRole, err = manager.Single().HasRoleForUser(uid, role)
 			} else {
 				tenantID, exists := c.Get("tenant_id")
