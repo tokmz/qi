@@ -249,4 +249,3 @@ func (c *Config) String() string {
 		c.AutoLoad,
 	)
 }
-
