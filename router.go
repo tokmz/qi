@@ -30,43 +30,83 @@ func (rg *RouterGroup) Use(middlewares ...HandlerFunc) {
 // ============ 基础路由方法 ============
 
 // GET 注册 GET 路由
-func (rg *RouterGroup) GET(path string, handler HandlerFunc) {
-	rg.group.GET(path, WrapHandler(handler))
+func (rg *RouterGroup) GET(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.GET(path, handlers...)
+	} else {
+		rg.group.GET(path, WrapHandler(handler))
+	}
 }
 
 // POST 注册 POST 路由
-func (rg *RouterGroup) POST(path string, handler HandlerFunc) {
-	rg.group.POST(path, WrapHandler(handler))
+func (rg *RouterGroup) POST(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.POST(path, handlers...)
+	} else {
+		rg.group.POST(path, WrapHandler(handler))
+	}
 }
 
 // PUT 注册 PUT 路由
-func (rg *RouterGroup) PUT(path string, handler HandlerFunc) {
-	rg.group.PUT(path, WrapHandler(handler))
+func (rg *RouterGroup) PUT(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.PUT(path, handlers...)
+	} else {
+		rg.group.PUT(path, WrapHandler(handler))
+	}
 }
 
 // DELETE 注册 DELETE 路由
-func (rg *RouterGroup) DELETE(path string, handler HandlerFunc) {
-	rg.group.DELETE(path, WrapHandler(handler))
+func (rg *RouterGroup) DELETE(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.DELETE(path, handlers...)
+	} else {
+		rg.group.DELETE(path, WrapHandler(handler))
+	}
 }
 
 // PATCH 注册 PATCH 路由
-func (rg *RouterGroup) PATCH(path string, handler HandlerFunc) {
-	rg.group.PATCH(path, WrapHandler(handler))
+func (rg *RouterGroup) PATCH(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.PATCH(path, handlers...)
+	} else {
+		rg.group.PATCH(path, WrapHandler(handler))
+	}
 }
 
 // HEAD 注册 HEAD 路由
-func (rg *RouterGroup) HEAD(path string, handler HandlerFunc) {
-	rg.group.HEAD(path, WrapHandler(handler))
+func (rg *RouterGroup) HEAD(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.HEAD(path, handlers...)
+	} else {
+		rg.group.HEAD(path, WrapHandler(handler))
+	}
 }
 
 // OPTIONS 注册 OPTIONS 路由
-func (rg *RouterGroup) OPTIONS(path string, handler HandlerFunc) {
-	rg.group.OPTIONS(path, WrapHandler(handler))
+func (rg *RouterGroup) OPTIONS(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.OPTIONS(path, handlers...)
+	} else {
+		rg.group.OPTIONS(path, WrapHandler(handler))
+	}
 }
 
 // Any 注册所有 HTTP 方法的路由
-func (rg *RouterGroup) Any(path string, handler HandlerFunc) {
-	rg.group.Any(path, WrapHandler(handler))
+func (rg *RouterGroup) Any(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
+	if len(middlewares) > 0 {
+		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
+		rg.group.Any(path, handlers...)
+	} else {
+		rg.group.Any(path, WrapHandler(handler))
+	}
 }
 
 // ============ 静态文件服务 ============
@@ -89,12 +129,12 @@ func (rg *RouterGroup) StaticFS(relativePath string, fs http.FileSystem) {
 // ============ 高级泛型路由（自动绑定 + 自动响应）============
 
 // RouteRegister 路由注册函数类型
-type RouteRegister func(path string, handler HandlerFunc)
+type RouteRegister func(path string, handler HandlerFunc, middlewares ...HandlerFunc)
 
 // Handle 有请求参数，有响应数据
 // 自动绑定请求参数，自动处理响应
-func Handle[Req any, Resp any](register RouteRegister, path string, handler func(*Context, *Req) (*Resp, error)) {
-	register(path, func(c *Context) {
+func Handle[Req any, Resp any](register RouteRegister, path string, handler func(*Context, *Req) (*Resp, error), middlewares ...HandlerFunc) {
+	wrappedHandler := func(c *Context) {
 		var req Req
 		if err := autoBind(c, &req); err != nil {
 			c.RespondError(err)
@@ -106,13 +146,14 @@ func Handle[Req any, Resp any](register RouteRegister, path string, handler func
 			return
 		}
 		c.Success(resp)
-	})
+	}
+	register(path, wrappedHandler, middlewares...)
 }
 
 // Handle0 有请求参数，无响应数据
 // 自动绑定请求参数，自动处理响应
-func Handle0[Req any](register RouteRegister, path string, handler func(*Context, *Req) error) {
-	register(path, func(c *Context) {
+func Handle0[Req any](register RouteRegister, path string, handler func(*Context, *Req) error, middlewares ...HandlerFunc) {
+	wrappedHandler := func(c *Context) {
 		var req Req
 		if err := autoBind(c, &req); err != nil {
 			c.RespondError(err)
@@ -123,20 +164,22 @@ func Handle0[Req any](register RouteRegister, path string, handler func(*Context
 			return
 		}
 		c.Nil()
-	})
+	}
+	register(path, wrappedHandler, middlewares...)
 }
 
 // HandleOnly 无请求参数，有响应数据
 // 自动处理响应
-func HandleOnly[Resp any](register RouteRegister, path string, handler func(*Context) (*Resp, error)) {
-	register(path, func(c *Context) {
+func HandleOnly[Resp any](register RouteRegister, path string, handler func(*Context) (*Resp, error), middlewares ...HandlerFunc) {
+	wrappedHandler := func(c *Context) {
 		resp, err := handler(c)
 		if err != nil {
 			c.RespondError(err)
 			return
 		}
 		c.Success(resp)
-	})
+	}
+	register(path, wrappedHandler, middlewares...)
 }
 
 // autoBind 根据请求方法自动选择绑定策略
