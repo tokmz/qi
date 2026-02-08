@@ -106,6 +106,13 @@ qi.HandleOnly[InfoResp](r.GET, "/info",
     func(c *qi.Context) (*InfoResp, error) {
         return &InfoResp{Version: "1.0.0"}, nil
     })
+
+// 泛型路由支持中间件（单个或多个）
+qi.Handle[CreateUserReq, UserResp](r.POST, "/admin/user",
+    createUserHandler,
+    authMiddleware,      // 第一个中间件
+    adminMiddleware,     // 第二个中间件
+)
 ```
 
 ### 路由组和中间件
@@ -128,11 +135,36 @@ func traceMiddleware(c *qi.Context) {
 // 全局中间件
 engine.Use(traceMiddleware)
 
-// API v1 路由组
+// 路由组中间件
 v1 := r.Group("/api/v1")
 v1.Use(authMiddleware)
 
 qi.Handle[LoginReq, TokenResp](v1.POST, "/login", loginHandler)
+
+// 单个路由使用中间件（不需要路由组）
+qi.Handle[CreateUserReq, UserResp](
+    r.POST,
+    "/admin/user",
+    createUserHandler,
+    authMiddleware,      // 认证中间件
+    adminMiddleware,     // 管理员中间件
+)
+
+// 基础路由也支持中间件
+r.GET("/admin/dashboard", dashboardHandler, authMiddleware, adminMiddleware)
+
+// 中间件执行顺序
+v1 := r.Group("/api/v1")
+v1.Use(middleware1)  // 第一个执行
+
+qi.Handle[Req, Resp](
+    v1.POST,
+    "/user",
+    handler,
+    middleware2,  // 第二个执行
+    middleware3,  // 第三个执行
+)
+// handler 最后执行
 ```
 
 ## 配置选项
