@@ -3,7 +3,6 @@ package qi
 import (
 	"net/http"
 	"qi/pkg/errors"
-	"qi/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
 )
@@ -131,15 +130,6 @@ func (c *Context) Page(list any, total uint64) {
 	}
 	resp := Success(NewPageResp(list, total))
 	c.respond(http.StatusOK, resp)
-}
-
-// T 翻译（从上下文获取语言）
-func (c *Context) T(key string, args ...any) string {
-	lang := GetContextLanguage(c)
-	if lang == "" {
-		lang = i18n.GetDefaultLanguage()
-	}
-	return i18n.T(lang, key, args...)
 }
 
 // respond 统一响应处理（自动添加 TraceID）
