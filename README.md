@@ -12,6 +12,8 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 - 🔍 **链路追踪** - 内置 TraceID 支持
 - ⚙️ **Options 模式** - 灵活的配置方式
 - 🛑 **优雅关机** - 支持优雅关机和生命周期回调
+- 🔒 **封装设计** - Context 包装器提供清晰的 API 边界
+- 🛠️ **内置 Recovery** - 默认启用 panic 恢复机制，防止服务崩溃
 
 ## 快速开始
 
@@ -23,7 +25,7 @@ package main
 import "qi"
 
 func main() {
-    // 创建 Engine（带默认中间件：Logger + Recovery）
+    // 创建 Engine（New() 默认包含 Recovery，Default() 额外添加 Logger）
     engine := qi.Default()
     r := engine.RouterGroup()
 
@@ -441,6 +443,40 @@ func main() {
     engine1 := qi.New(qi.WithMode(gin.ReleaseMode))
     engine2 := qi.New(qi.WithMode(gin.DebugMode))  // 可能影响 engine1
 }
+```
+
+### Context 包装器
+
+Qi 使用私有字段封装 `gin.Context`，提供清晰的 API 边界。如果需要在测试中创建 `qi.Context` 实例，请使用公开的构造函数：
+
+```go
+// ✅ 测试中创建 Context
+import (
+    "testing"
+    "github.com/gin-gonic/gin"
+    "qi"
+)
+
+func TestHandler(t *testing.T) {
+    ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+    c := qi.NewContext(ginCtx)  // 使用公开的构造函数
+    // 进行测试...
+}
+
+// ❌ 避免：直接构造（编译错误）
+c := &qi.Context{ctx: ginCtx}  // ctx 是私有字段，无法访问
+```
+
+### Recovery 中间件
+
+`qi.New()` 默认包含 `gin.Recovery()` 中间件，防止 panic 导致服务崩溃。`qi.Default()` 在此基础上额外添加了 `gin.Logger()` 中间件：
+
+```go
+// New() - 仅包含 Recovery
+engine := qi.New()
+
+// Default() - 包含 Recovery + Logger
+engine := qi.Default()
 ```
 
 ## License

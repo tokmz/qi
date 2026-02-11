@@ -12,15 +12,15 @@ import (
 func Middleware(logger Logger) qi.HandlerFunc {
 	return func(c *qi.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
-		method := c.Request.Method
+		path := c.Request().URL.Path
+		method := c.Request().Method
 
 		// 处理请求
 		c.Next()
 
 		// 记录请求日志
 		latency := time.Since(start)
-		status := c.Writer.Status()
+		status := c.Writer().Status()
 
 		fields := []zap.Field{
 			zap.String("method", method),

@@ -152,7 +152,7 @@ func TestLoggerWithContext(t *testing.T) {
 	engine := qi.New()
 	ginCtx, _ := gin.CreateTestContext(nil)
 	ginCtx.Request, _ = http.NewRequest("GET", "/test", nil)
-	c := &qi.Context{Context: ginCtx}
+	c := qi.NewContext(ginCtx)
 
 	// 设置 TraceID 和 UID
 	qi.SetContextTraceID(c, "trace-123")
@@ -200,7 +200,7 @@ func TestLoggerWithContextMethod(t *testing.T) {
 	engine := qi.New()
 	ginCtx, _ := gin.CreateTestContext(nil)
 	ginCtx.Request, _ = http.NewRequest("GET", "/test", nil)
-	c := &qi.Context{Context: ginCtx}
+	c := qi.NewContext(ginCtx)
 
 	// 设置 TraceID 和 UID
 	qi.SetContextTraceID(c, "trace-456")
@@ -255,7 +255,7 @@ func TestContextHelpers(t *testing.T) {
 
 	// 使用 Gin 的测试 Context
 	ginCtx, _ := gin.CreateTestContext(nil)
-	c := &qi.Context{Context: ginCtx}
+	c := qi.NewContext(ginCtx)
 
 	// 设置 Logger
 	SetContextLogger(c, logger)

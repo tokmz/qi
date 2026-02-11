@@ -37,6 +37,9 @@ func New(opts ...Option) *Engine {
 	// 创建 Gin Engine
 	ginEngine := gin.New()
 
+	// 添加默认 Recovery 中间件（防止 panic 导致服务崩溃）
+	ginEngine.Use(gin.Recovery())
+
 	// 设置信任的代理
 	if config.TrustedProxies != nil {
 		if err := ginEngine.SetTrustedProxies(config.TrustedProxies); err != nil {
@@ -57,12 +60,12 @@ func New(opts ...Option) *Engine {
 }
 
 // Default 创建一个带有默认中间件的 Engine
+// 注意：Recovery 中间件已在 New() 中添加，这里只添加 Logger
 func Default(opts ...Option) *Engine {
-	// 创建基础 Engine
+	// 创建基础 Engine（已包含 Recovery 中间件）
 	e := New(opts...)
 
-	// 添加默认中间件Recovery
-	e.engine.Use(gin.Recovery())
+	// 添加 Logger 中间件
 	e.engine.Use(gin.Logger())
 
 	return e

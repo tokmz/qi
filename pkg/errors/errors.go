@@ -77,9 +77,10 @@ func (e *Error) Is(target error) bool {
 
 // As 转换为指定类型的错误
 // err 待转换错误
-// target 目标错误类型指针
+// target 目标错误类型指针（必须是指针类型）
+// 修复：直接传递 target，不再传递指针的指针
 func As(err error, target any) bool {
-	return errors.As(err, &target)
+	return errors.As(err, target)
 }
 
 // Is 检查错误是否为指定类型
