@@ -184,7 +184,7 @@ func HandleOnly[Resp any](register RouteRegister, path string, handler func(*Con
 
 // autoBind 根据请求方法自动选择绑定策略
 func autoBind(c *Context, obj any) error {
-	method := c.Request.Method
+	method := c.Request().Method
 
 	// GET/DELETE: Query + URI
 	if method == "GET" || method == "DELETE" {
