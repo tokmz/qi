@@ -42,6 +42,11 @@ func (c *Context) Param(key string) string {
 	return c.ctx.Param(key)
 }
 
+// FullPath 获取路由模板路径（如 /users/:id）
+func (c *Context) FullPath() string {
+	return c.ctx.FullPath()
+}
+
 // Query 获取 URL 查询参数
 func (c *Context) Query(key string) string {
 	return c.ctx.Query(key)
@@ -336,4 +341,9 @@ func (c *Context) RequestContext() context.Context {
 	}
 
 	return ctx
+}
+
+// SetRequestContext 更新 Request 的 Context（用于中间件注入 SpanContext）
+func (c *Context) SetRequestContext(ctx context.Context) {
+	c.ctx.Request = c.ctx.Request.WithContext(ctx)
 }

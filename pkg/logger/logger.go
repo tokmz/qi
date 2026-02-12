@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"qi"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Logger 日志接口
@@ -262,11 +263,16 @@ func (l *logger) ErrorContext(ctx context.Context, msg string, fields ...zap.Fie
 
 // contextFields 从标准库 context.Context 提取字段
 func (l *logger) contextFields(ctx context.Context, fields []zap.Field) []zap.Field {
-	contextFields := make([]zap.Field, 0, len(fields)+2)
+	contextFields := make([]zap.Field, 0, len(fields)+3)
 
 	// 从 context.Context 提取 TraceID
 	if traceID := qi.GetTraceIDFromContext(ctx); traceID != "" {
 		contextFields = append(contextFields, zap.String("trace_id", traceID))
+	}
+
+	// 从 context.Context 提取 OpenTelemetry SpanID
+	if spanID := extractSpanID(ctx); spanID != "" {
+		contextFields = append(contextFields, zap.String("span_id", spanID))
 	}
 
 	// 从 context.Context 提取 UID
@@ -319,6 +325,15 @@ func (l *logger) SetLevel(level Level) {
 // Level 获取当前级别
 func (l *logger) Level() Level {
 	return fromZapLevel(l.level.Load().(zapcore.Level))
+}
+
+// extractSpanID 从 context.Context 提取 OpenTelemetry SpanID
+func extractSpanID(ctx context.Context) string {
+	span := trace.SpanFromContext(ctx)
+	if span.SpanContext().IsValid() {
+		return span.SpanContext().SpanID().String()
+	}
+	return ""
 }
 
 // hookCore 实现 Hook 机制的 Core
