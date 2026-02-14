@@ -14,6 +14,7 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 - 🛑 **优雅关机** - 支持优雅关机和生命周期回调
 - 🔒 **封装设计** - Context 包装器提供清晰的 API 边界
 - 🛠️ **内置 Recovery** - 默认启用 panic 恢复机制，防止服务崩溃
+- 🌍 **国际化** - 内置 i18n 支持，JSON 翻译文件、变量替换、复数形式、懒加载
 
 ## 快速开始
 
@@ -423,6 +424,93 @@ if err := engine.RunTLS(":443", "cert.pem", "key.pem"); err != nil {
     log.Fatal(err)
 }
 ```
+
+## 国际化 (i18n)
+
+Qi 内置国际化支持，通过 `pkg/i18n` 包和 `middleware/i18n` 中间件实现。
+
+### 创建翻译文件
+
+```
+locales/
+├── zh-CN.json
+└── en-US.json
+```
+
+```json
+// locales/zh-CN.json
+{
+    "hello": "你好 {{.Name}}",
+    "user": {
+        "login": "登录",
+        "logout": "退出登录"
+    }
+}
+```
+
+### 创建翻译器
+
+```go
+import "qi/pkg/i18n"
+
+trans, err := i18n.NewWithOptions(
+    i18n.WithDir("./locales"),
+    i18n.WithDefaultLanguage("zh-CN"),
+    i18n.WithLanguages("zh-CN", "en-US"),
+)
+if err != nil {
+    panic(err)
+}
+```
+
+### 使用 i18n 中间件
+
+```go
+import "qi/middleware"
+
+engine := qi.Default()
+r := engine.RouterGroup()
+
+// 使用默认配置（从 Query > Cookie > Accept-Language 识别语言）
+engine.Use(middleware.I18n(trans))
+
+// 自定义配置
+engine.Use(middleware.I18n(trans, &middleware.I18nConfig{
+    QueryKey:     "lang",
+    CookieKey:    "language",
+    HeaderKey:    "Accept-Language",
+    SetCookie:    true,
+    CookieMaxAge: 86400 * 30,
+}))
+```
+
+### 在路由中使用翻译
+
+```go
+r.GET("/hello", func(c *qi.Context) {
+    msg := trans.T(c.RequestContext(), "hello", "Name", "Alice")
+    c.Success(msg)
+})
+
+// 泛型路由
+qi.Handle[HelloReq, HelloResp](r.POST, "/hello",
+    func(c *qi.Context, req *HelloReq) (*HelloResp, error) {
+        msg := trans.T(c.RequestContext(), "hello", "Name", req.Name)
+        return &HelloResp{Message: msg}, nil
+    })
+```
+
+### 复数形式
+
+```go
+// 翻译文件: {"item_one": "{{.Count}} item", "item_other": "{{.Count}} items"}
+trans.Tn(ctx, "item_one", "item_other", 1)  // "1 item"
+trans.Tn(ctx, "item_one", "item_other", 5)  // "5 items"
+```
+
+### 语言回退
+
+当请求的语言中找不到翻译键时，自动回退到默认语言。如果默认语言也找不到，返回 key 本身。
 
 ## 注意事项
 
