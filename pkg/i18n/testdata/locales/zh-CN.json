@@ -1,0 +1,9 @@
+{
+  "hello": "你好 {{.Name}}",
+  "message_one": "{{.Count}} 条消息",
+  "message_other": "{{.Count}} 条消息",
+  "error.not_found": "未找到 {{.Resource}}",
+  "user.login": "登录",
+  "user.logout": "退出",
+  "app.name": "Qi 框架"
+}

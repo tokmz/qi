@@ -1,0 +1,9 @@
+{
+  "hello": "Hello {{.Name}}",
+  "message_one": "{{.Count}} message",
+  "message_other": "{{.Count}} messages",
+  "error.not_found": "{{.Resource}} not found",
+  "user.login": "Login",
+  "user.logout": "Logout",
+  "app.name": "Qi Framework"
+}
