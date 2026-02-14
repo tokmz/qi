@@ -479,6 +479,457 @@ engine := qi.New()
 engine := qi.Default()
 ```
 
+## API 参考
+
+### Engine API
+
+#### 创建 Engine
+
+```go
+// New 创建一个新的 Engine 实例（包含 Recovery 中间件）
+func New(opts ...Option) *Engine
+
+// Default 创建带有 Logger + Recovery 中间件的 Engine
+func Default(opts ...Option) *Engine
+```
+
+#### Engine 方法
+
+```go
+// Use 注册全局中间件
+func (e *Engine) Use(middlewares ...HandlerFunc)
+
+// Group 创建路由组
+func (e *Engine) Group(path string) *RouterGroup
+
+// RouterGroup 返回根路由组
+func (e *Engine) RouterGroup() *RouterGroup
+
+// Run 启动 HTTP 服务器（支持优雅关机）
+func (e *Engine) Run(addr ...string) error
+
+// RunTLS 启动 HTTPS 服务器（支持优雅关机）
+func (e *Engine) RunTLS(addr, certFile, keyFile string) error
+
+// Shutdown 手动关闭服务器
+func (e *Engine) Shutdown(ctx context.Context) error
+```
+
+### RouterGroup API
+
+#### 路由组管理
+
+```go
+// Group 创建子路由组
+func (rg *RouterGroup) Group(path string, middlewares ...HandlerFunc) *RouterGroup
+
+// Use 注册中间件到路由组
+func (rg *RouterGroup) Use(middlewares ...HandlerFunc)
+```
+
+#### 基础路由方法
+
+```go
+// GET 注册 GET 路由
+func (rg *RouterGroup) GET(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// POST 注册 POST 路由
+func (rg *RouterGroup) POST(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// PUT 注册 PUT 路由
+func (rg *RouterGroup) PUT(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// DELETE 注册 DELETE 路由
+func (rg *RouterGroup) DELETE(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// PATCH 注册 PATCH 路由
+func (rg *RouterGroup) PATCH(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// HEAD 注册 HEAD 路由
+func (rg *RouterGroup) HEAD(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// OPTIONS 注册 OPTIONS 路由
+func (rg *RouterGroup) OPTIONS(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+
+// Any 注册所有 HTTP 方法的路由
+func (rg *RouterGroup) Any(path string, handler HandlerFunc, middlewares ...HandlerFunc)
+```
+
+#### 静态文件服务
+
+```go
+// Static 注册静态文件目录服务
+func (rg *RouterGroup) Static(relativePath, root string)
+
+// StaticFile 注册单个静态文件服务
+func (rg *RouterGroup) StaticFile(relativePath, filepath string)
+
+// StaticFS 注册静态文件系统服务
+func (rg *RouterGroup) StaticFS(relativePath string, fs http.FileSystem)
+```
+
+#### 泛型路由方法
+
+```go
+// Handle 有请求参数，有响应数据（自动绑定 + 自动响应）
+le[Req any, Resp any](
+    register RouteRegister,
+    path string,
+    handler func(*Context, *Req) (*Resp, error),
+    middlewares ...HandlerFunc,
+)
+
+// Handle0 有请求参数，无响应数据（自动绑定 + 自动响应）
+func Handle0[Req any](
+    register RouteRegister,
+    path string,
+    handler func(*Context, *Req) error,
+    middlewares ...HandlerFunc,
+)
+
+// HandleOnly 无请求参数，有响应数据（自动响应）
+func HandleOnly[Resp any](
+    register RouteRegister,
+    path string,
+    handler func(*Context) (*Resp, error),
+    middlewares ...HandlerFunc,
+)
+```
+
+### Context API
+
+#### 请求信息获取
+
+```go
+// Request 返回底层的 *http.Request
+func (c *Context) Request() *http.Request
+
+// Writer 返回底层的 http.ResponseWriter
+func (c *Context) Writer() gin.ResponseWriter
+
+// Param 获取路径参数
+func (c *Context) Param(key string) string
+
+// FullPath 获取路由模板路径（如 /users/:id）
+func (c *Context) FullPath() string
+
+// Query 获取 URL 查询参数
+func (c *Context) Query(key string) string
+
+// DefaultQuery 获取 URL 查询参数（带默认值）
+func (c *Context) DefaultQuery(key, defaultValue string) string
+
+// GetQuery 获取 URL 查询参数（返回是否存在）
+func (c *Context) GetQuery(key string) (string, bool)
+
+// PostForm 获取 POST 表单参数
+func (c *Context) PostForm(key string) string
+// DefaultPostForm 获取 POST 表单参数（带默认值）
+func (c *Context) DefaultPostForm(key, defaultValue string) string
+
+// GetPostForm 获取 POST 表单参数（返回是否存在）
+func (c *Context) GetPostForm(key string) (string, bool)
+
+// ClientIP 获取客户端 IP
+func (c *Context) ClientIP() string
+
+// ContentType 获取 Content-Type
+func (c *Context) ContentType() string
+
+// GetHeader 获取请求头
+func (c *Context) GetHeader(key string) string
+```
+
+#### 参数绑定方法（自动响应错误）
+
+```go
+// Bind 自动绑定并验证请求参数（根据 Content-Type 自动选择）
+// 绑定失败时自动响应错误，用户只需判断 err != nil 并 return
+func (c *Context) Bind(obj any) error
+
+// BindJSON 绑定 JSON 请求体
+// 绑定失败时自动响应错误，用户只需判断 err != nil 并 return
+func (c *Context) BindJSON(obj any) error
+
+// BindQuery 绑定 URL 查询参数
+// 绑定失败时自动响应错误，用户只需判断 err != nil 并 return
+func (c *Context) BindQuery(obj any) error
+
+// BindURI 绑定路径参数
+// 绑定失败时自动响应错误，用户只需判断 err != nil 并 return
+func (c *Context) BindURI(obj any) error
+
+// BindHeader 绑定请求头
+// 绑定失败时自动响应错误，用户只需判断 err != nil 并 return
+func (c *Context) BindHeader(obj any) error
+```
+
+#### 参数绑定方法（不自动响应错误）
+
+```go
+// ShouldBind 绑定请求参数（不自动响应错误）
+func (c *Context) ShouldBind(obj any) error
+
+// ShouldBindJSON 绑定 JSON 请求体（不自动响应错误）
+func (c *Context) ShouldBindJSON(obj any) error
+
+// ShouldBindQuery 绑定 URL 查询参数（不自动响应错误）
+func (c *Context) ShouldBindQuery(obj any) error
+
+// ShouldBindUri 绑定路径参数（不自动响应错误）
+func (c *Context) ShouldBindUri(obj any) error
+
+// ShouldBindHeader 绑定请求头（不自动响应错误）
+func (c *Context) ShouldBindHeader(obj any) error
+```
+
+#### 响应方法
+
+```go
+// Success 成功响应
+func (c *Context) Success(data any)
+
+// SuccessWithMessage 成功响应（自定义消息）
+func (c *Context) SuccessWithMessage(data any, message string)
+
+// Nil 成功响应（无数据）
+func (c *Context) Nil()
+
+// Fail 失败响应
+func (c *Context) Fail(code int, message string)
+
+// RespondError 错误响应
+func (c *Context) RespondError(err error)
+
+// Page 分页响应
+func (c *Context) Page(list any, total uint64)
+
+// JSON 发送 JSON 响应
+func (c *Context) JSON(code int, obj any)
+```
+
+#### 响应头设置
+
+```go
+// Header 设置响应头
+func (c *Context) Header(key, value string)
+```
+
+#### 上下文键值对操作
+
+```go
+// Set 设置上下文键值对
+func (c *Context) Set(key string, value any)
+
+// Get 获取上下文键值对
+func (c *Context) Get(key string) (any, bool)
+
+// GetString 获取字符串类型的上下文值
+func (c *Context) GetString(key string) string
+
+// GetInt 获取整数类型的上下文值
+func (c *Context) GetInt(key string) int
+
+// GetInt64 获取 int64 类型的上下文值
+func (c *Context) GetInt64(key string) int64
+
+// GetUint 获取 uint 类型的上下文值
+func (c *Context) GetUint(key string) uint
+
+// GetUint64 获取 uint64 类型的上下文值
+func (c *Context) GetUint64(key string) uint64
+
+// GetFloat64 获取 float64 类型的上下文值
+func (c *Context) GetFloat64(key string) float64
+
+// GetBool 获取布尔类型的上下文值
+func (c *Context) GetBool(key string) bool
+```
+
+#### 中间件控制
+
+```go
+// Next 执行下一个中间件或处理函数
+func (c *Context) Next()
+
+// Abort 中止请求处理
+func (c *Context) Abort()
+
+// AbortWithStatus 中止请求并设置状态码
+func (c *Context) AbortWithStatus(code int)
+
+// AbortWithStatusJSON 中止请求并返回 JSON
+func (c *Context) AbortWithStatusJSON(code int, jsonObj any)
+
+// IsAborted 检查请求是否已中止
+func (c *Context) IsAborted() bool
+```
+
+#### Context 传递
+
+```go
+// RequestContext 返回标准库 context.Context，用于传递给 Service 层
+// 自动将 TraceID、UID、Language 注入到 context.Context
+func (c *Context) RequestContext() context.Context
+
+// SetRequestContext 更新 Request 的 Context（用于中间件注入 SpanContext）
+func (c *Context) SetRequestContext(ctx context.Context)
+```
+
+### 配置选项 API
+
+```go
+// WithMode 设置运行模式
+func WithMode(mode string) Option
+
+// WithAddr 设置监听地址
+func WithAddr(addr string) Option
+
+// WithReadTimeout 设置读取超时
+func WithReadTimeout(timeout time.Duration) Option
+
+// WithWriteTimeout 设置写入超时
+func WithWriteTimeout(timeout time.Duration) Option
+
+// WithIdleTimeout 设置空闲超时
+func WithIdleTimeout(timeout time.Duration) Option
+
+// WithMaxHeaderBytes 设置最大请求头字节数
+func WithMaxHeaderBytes(size int) Option
+
+// WithShutdownTimeout 设置关机超时时间
+func WithShutdownTimeout(timeout time.Duration) Option
+
+// WithBeforeShutdown 设置关机前回调
+func WithBeforeShutdown(fn func()) Option
+
+// WithAfterShutdown 设置关机后回调
+func WithAfterShutdown(fn func()) Option
+
+// WithTrustedProxies 设置信任的代理
+func WithTrustedProxies(proxies ...string) Option
+
+// WithMaxMultipartMemory 设置最大 multipart 内存
+func WithMaxMultipartMemory(size int64) Option
+```
+
+### 响应结构 API
+
+```go
+// Response 统一响应结构
+type Response struct {
+    Code    int    `json:"code"`             // 业务状态码
+    Data    any    `json:"data"`               // 响应数据
+    Message string `json:"message"`            // 响应消息
+    TraceID string `json:"trace_id,omitempty"` // 追踪ID（可选）
+}
+
+// NewResponse 创建响应
+func NewResponse(code int, data any, message string) *Response
+
+// WithTraceID 设置追踪ID
+func (r *Response) WithTraceID(traceID string) *Response
+
+// Success 创建成功响应
+func Success(data any) *Response
+
+// SuccessWithMessage 创建成功响应（自定义消息）
+func SuccessWithMessage(data any, message string) *Response
+
+// Fail 创建失败响应
+func Fail(code int, message string) *Response
+
+// PageResp 分页响应结构
+type PageResp struct {
+    List  any    `json:"list"`  // 数据列表
+    Total uint64 `json:"total"` // 总数
+}
+
+// NewPageResp 创建分页响应
+func NewPageResp(list any, total uint64) *PageResp
+
+// PageData 分页数据包装器
+func PageData(list any, total uint64) *Response
+```
+
+### 上下文辅助函数 API
+
+```go
+// GetContextTraceID 获取上下文链路追踪 trace_id
+func GetContextTraceID(ctx *Context) string
+
+// SetContextTraceID 设置上下文链路追踪 trace_id
+func SetContextTraceID(ctx *Context, traceID string)
+
+// GetContextUid 获取上下文用户 uid
+func GetContextUid(ctx *Context) int64
+
+// SetContextUid 设置上下文用户 uid
+func SetContextUid(ctx *Context, uid int64)
+
+// GetContextLanguage 获取上下文用户语言
+func GetContextLanguage(ctx *Context) string
+
+// SetContextLanguage 设置上下文用户语言
+func SetContextLanguage(ctx *Context, language string)
+
+// GetTraceIDFromContext 从标准库 context.Context 获取 TraceID
+func GetTraceIDFromContext(ctx context.Context) string
+
+// GetUidFromContext 从标准库 context.Context 获取 UID
+func GetUidFromContext(ctx context.Context) int64
+
+// GetLanguageFromContext 从标准库 context.Context 获取 Language
+func GetLanguageFromContext(ctx context.Context) string
+```
+
+### 上下文常量
+
+```go
+const (
+    // ContextTraceIDKey 链路追踪 trace_id 键（用于 Gin Context）
+    ContextTraceIDKey = "trace_id"
+
+    // ContextUidKey 用户 uid 键（用于 Gin Context）
+    ContextUidKey = "uid"
+
+    // ContextLanguageKey 用户语言键（用于 Gin Context）
+    ContextLanguageKey = "language"
+)
+```
+
+### 错误处理 API
+
+详见 `pkg/errors/` 包文档。
+
+```go
+// Error 自定义错误类型
+type Error struct {
+    Code     int    // 业务错误码
+    HttpCode int    // HTTP 状态码
+    Message  string // 错误消息
+    Err      error  // 原始错误
+}
+
+// New 创建自定义错误
+func New(code int, httpCode int, message string, err error) *Error
+
+// WithMessage 设置错误消息
+func (e *Error) WithMessage(message string) *Error
+
+// WithEor 包装原始错误
+func (e *Error) WithError(err error) *Error
+
+// 预定义错误
+var (
+    ErrServer       = New(1000, 500, "服务器错误", nil)
+    ErrBadRequest   = New(1001, 400, "请求参数错误", nil)
+    ErrUnauthorized = New(1002, 401, "未授权", nil)
+    ErrForbidden    = New(1003, 403, "禁止访问", nil)
+    ErrNotFound     = New(1004, 404, "资源不存在", nil)
+)
+```
+
 ## License
 
 MIT

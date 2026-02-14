@@ -2,6 +2,16 @@ package job
 
 import (
 	"time"
+
+	"github.com/robfig/cron/v3"
+)
+
+// 常量定义
+const (
+	MaxJobNameLength     = 128
+	MaxHandlerNameLength = 128
+	MaxPayloadLength     = 65535
+	DefaultRunLimit      = 10
 )
 
 // JobType 任务类型
@@ -38,8 +48,9 @@ type Job struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
-	Cron        string     `json:"cron"`                  // Cron 表达式
-	Type        JobType    `json:"type"`                  // 任务类型
+	Cron        string        `json:"cron"`                  // Cron 表达式
+	Interval    Duration      `json:"interval"`              // 间隔时间（用于 interval 类型）
+	Type        JobType       `json:"type"`                  // 任务类型
 	Status      JobStatus  `json:"status"`                // 任务状态
 	HandlerName string     `json:"handler_name"`          // 处理器名称
 	Payload     string     `json:"payload"`               // JSON 参数
@@ -52,18 +63,20 @@ type Job struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
-// Clone 深拷贝 Job 对象
+// Clone 浅拷贝 Job 对象（优化版：字符串共享底层数据）
+// 注意：Go 的字符串是不可变的，多个变量可以安全地共享同一个字符串
 func (j *Job) Clone() *Job {
 	job := &Job{
 		ID:          j.ID,
 		Name:        j.Name,
 		Description: j.Description,
 		Cron:        j.Cron,
+		Interval:    j.Interval,
 		Type:        j.Type,
 		Status:      j.Status,
 		HandlerName: j.HandlerName,
-		Payload:     j.Payload,
-		LastResult:  j.LastResult,
+		Payload:     j.Payload,    // 字符串共享底层数据，无需深拷贝
+		LastResult:  j.LastResult, // 字符串共享底层数据，无需深拷贝
 		RetryCount:  j.RetryCount,
 		MaxRetry:    j.MaxRetry,
 		CreatedAt:   j.CreatedAt,
@@ -96,11 +109,12 @@ type Run struct {
 
 // JobData 用于存储和传输的 Job 数据（不包含指针）
 type JobData struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Cron        string    `json:"cron"`
-	Type        JobType   `json:"type"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Cron        string        `json:"cron"`
+	Interval    Duration      `json:"interval"`
+	Type        JobType       `json:"type"`
 	Status      JobStatus `json:"status"`
 	HandlerName string    `json:"handler_name"`
 	Payload     string    `json:"payload"`
@@ -120,6 +134,7 @@ func (j *Job) ToData() JobData {
 		Name:        j.Name,
 		Description: j.Description,
 		Cron:        j.Cron,
+		Interval:    j.Interval,
 		Type:        j.Type,
 		Status:      j.Status,
 		HandlerName: j.HandlerName,
@@ -147,6 +162,7 @@ func FromData(data JobData) *Job {
 		Name:        data.Name,
 		Description: data.Description,
 		Cron:        data.Cron,
+		Interval:    data.Interval,
 		Type:        data.Type,
 		Status:      data.Status,
 		HandlerName: data.HandlerName,
@@ -170,13 +186,13 @@ func (j *Job) Validate() error {
 	if j.Name == "" {
 		return NewError(ErrCodeInvalidJobName, "job name is required", ErrInvalidJobName)
 	}
-	if len(j.Name) > 128 {
+	if len(j.Name) > MaxJobNameLength {
 		return NewError(ErrCodeInvalidJobName, "job name too long (max 128)", ErrInvalidJobName)
 	}
 	if j.HandlerName == "" {
 		return NewError(ErrCodeHandlerNotFound, "handler name is required", ErrHandlerNotFound)
 	}
-	if len(j.HandlerName) > 128 {
+	if len(j.HandlerName) > MaxHandlerNameLength {
 		return NewError(ErrCodeHandlerNotFound, "handler name too long (max 128)", ErrHandlerNotFound)
 	}
 	if j.Type == "" {
@@ -185,7 +201,17 @@ func (j *Job) Validate() error {
 	if j.Type == JobTypeCron && j.Cron == "" {
 		return NewError(ErrCodeInvalidCron, "cron expression is required for cron job", ErrInvalidCronExpression)
 	}
-	if len(j.Payload) > 65535 {
+	// 验证 Cron 表达式格式
+	if j.Type == JobTypeCron && j.Cron != "" {
+		parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		if _, err := parser.Parse(j.Cron); err != nil {
+			return NewError(ErrCodeInvalidCron, "invalid cron expression format", err)
+		}
+	}
+	if j.Type == JobTypeInterval && j.Interval <= 0 {
+		return NewError(ErrCodeInvalidCron, "interval is required for interval job", nil)
+	}
+	if len(j.Payload) > MaxPayloadLength {
 		return NewError(ErrCodeInvalidPayload, "payload too long (max 65535)", ErrInvalidPayload)
 	}
 	if j.MaxRetry < 0 {

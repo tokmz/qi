@@ -2,33 +2,10 @@ package job
 
 import (
 	"time"
-
-	"gorm.io/gorm"
-)
-
-// StorageType 存储类型
-type StorageType string
-
-const (
-	StorageTypeMemory StorageType = "memory" // 内存存储
-	StorageTypeGorm   StorageType = "gorm"   // GORM 持久化存储
 )
 
 // Config 调度器配置
 type Config struct {
-	// 存储类型
-	StorageType StorageType
-
-	// GORM 数据库实例（用于持久化存储）
-	DB *gorm.DB
-
-	// 表名前缀
-	TablePrefix string
-
-	// 自定义表名
-	JobTableName string
-	RunTableName string
-
 	// 日志器
 	Logger Logger
 
@@ -41,46 +18,28 @@ type Config struct {
 	RetryDelay time.Duration
 	// 是否自动启动
 	AutoStart bool
+
+	// 性能优化配置
+	// 是否启用批量更新（减少数据库访问）
+	EnableBatchUpdate bool
+	// 批量更新大小
+	BatchSize int
+	// 批量更新刷新间隔
+	BatchFlushInterval time.Duration
+
+	// 缓存配置
+	// 是否启用 LRU 缓存
+	EnableCache bool
+	// 缓存容量
+	CacheCapacity int
+	// 缓存 TTL
+	CacheTTL time.Duration
+	// 缓存清理间隔
+	CacheCleanupInterval time.Duration
 }
 
 // Option 配置选项
 type Option func(*Config)
-
-// WithStorageType 设置存储类型
-func WithStorageType(t StorageType) Option {
-	return func(c *Config) {
-		c.StorageType = t
-	}
-}
-
-// WithGormDB 设置 GORM 数据库实例
-func WithGormDB(db *gorm.DB) Option {
-	return func(c *Config) {
-		c.DB = db
-		c.StorageType = StorageTypeGorm
-	}
-}
-
-// WithTablePrefix 设置表名前缀
-func WithTablePrefix(prefix string) Option {
-	return func(c *Config) {
-		c.TablePrefix = prefix
-	}
-}
-
-// WithJobTableName 设置任务表名
-func WithJobTableName(name string) Option {
-	return func(c *Config) {
-		c.JobTableName = name
-	}
-}
-
-// WithRunTableName 设置执行记录表名
-func WithRunTableName(name string) Option {
-	return func(c *Config) {
-		c.RunTableName = name
-	}
-}
 
 // WithConcurrentRuns 设置并发执行数
 func WithConcurrentRuns(n int) Option {
@@ -117,14 +76,69 @@ func WithLogger(logger Logger) Option {
 	}
 }
 
+// WithEnableBatchUpdate 设置是否启用批量更新
+func WithEnableBatchUpdate(enable bool) Option {
+	return func(c *Config) {
+		c.EnableBatchUpdate = enable
+	}
+}
+
+// WithBatchSize 设置批量更新大小
+func WithBatchSize(size int) Option {
+	return func(c *Config) {
+		c.BatchSize = size
+	}
+}
+
+// WithBatchFlushInterval 设置批量更新刷新间隔
+func WithBatchFlushInterval(interval time.Duration) Option {
+	return func(c *Config) {
+		c.BatchFlushInterval = interval
+	}
+}
+
+// WithEnableCache 设置是否启用缓存
+func WithEnableCache(enable bool) Option {
+	return func(c *Config) {
+		c.EnableCache = enable
+	}
+}
+
+// WithCacheCapacity 设置缓存容量
+func WithCacheCapacity(capacity int) Option {
+	return func(c *Config) {
+		c.CacheCapacity = capacity
+	}
+}
+
+// WithCacheTTL 设置缓存 TTL
+func WithCacheTTL(ttl time.Duration) Option {
+	return func(c *Config) {
+		c.CacheTTL = ttl
+	}
+}
+
+// WithCacheCleanupInterval 设置缓存清理间隔
+func WithCacheCleanupInterval(interval time.Duration) Option {
+	return func(c *Config) {
+		c.CacheCleanupInterval = interval
+	}
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
-		StorageType:    StorageTypeMemory,
-		ConcurrentRuns: 5,
-		JobTimeout:     5 * time.Minute,
-		RetryDelay:     time.Second * 5,
-		AutoStart:      false,
-		Logger:         &StdLogger{},
+		ConcurrentRuns:       DefaultConcurrentRuns,
+		JobTimeout:           DefaultJobTimeout,
+		RetryDelay:           DefaultRetryDelay,
+		AutoStart:            false,
+		Logger:               &StdLogger{},
+		EnableBatchUpdate:    false,
+		BatchSize:            DefaultBatchSize,
+		BatchFlushInterval:   DefaultBatchFlushInterval,
+		EnableCache:          false,
+		CacheCapacity:        DefaultCacheCapacity,
+		CacheTTL:             DefaultCacheTTL,
+		CacheCleanupInterval: DefaultCacheCleanupInterval,
 	}
 }

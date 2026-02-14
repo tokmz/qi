@@ -25,3 +25,9 @@ type Storage interface {
 	Close() error
 	Ping(ctx context.Context) error
 }
+
+// BatchStorage 可选的批量操作接口，Storage 实现可选择性实现此接口以获得批量更新性能
+type BatchStorage interface {
+	BatchUpdateJobs(ctx context.Context, jobs []*Job) error
+	BatchUpdateRuns(ctx context.Context, runs []*Run) error
+}

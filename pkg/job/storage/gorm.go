@@ -3,14 +3,10 @@ package storage
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
-	"gorm.io/driver/mysql"
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
 
 	"qi/pkg/job"
 )
@@ -21,53 +17,44 @@ type GormStorage struct {
 	tablePrefix string
 	jobTable    string
 	runTable    string
-	closed      bool
+	closed      atomic.Bool
 }
 
 // JobModel Job 数据模型
 type JobModel struct {
-	ID          string          `gorm:"primaryKey;size:64" json:"id"`
-	Name        string          `gorm:"size:128;index" json:"name"`
-	Description string          `gorm:"size:512" json:"description"`
-	Cron        string          `gorm:"size:64" json:"cron"`
-	Type        job.JobType     `gorm:"size:32" json:"type"`
-	Status      job.JobStatus   `gorm:"size:32;index" json:"status"`
-	HandlerName string          `gorm:"size:128" json:"handler_name"`
-	Payload     string          `gorm:"type:text" json:"payload"`
-	NextRunAt   *time.Time      `gorm:"index" json:"next_run_at"`
-	LastRunAt   *time.Time      `gorm:"index" json:"last_run_at"`
-	LastResult  string          `gorm:"type:text" json:"last_result"`
-	RetryCount  int             `gorm:"default:0" json:"retry_count"`
-	MaxRetry    int             `gorm:"default:3" json:"max_retry"`
-	CreatedAt   time.Time       `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt   time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
+	ID          string        `gorm:"primaryKey;size:64" json:"id"`
+	Name        string        `gorm:"size:128;index" json:"name"`
+	Description string        `gorm:"size:512" json:"description"`
+	Cron        string        `gorm:"size:64" json:"cron"`
+	Interval    int64         `gorm:"default:0" json:"interval"`
+	Type        job.JobType   `gorm:"size:32;index:idx_type_status" json:"type"`
+	Status      job.JobStatus `gorm:"size:32;index:idx_type_status,index:idx_status_next_run" json:"status"`
+	HandlerName string        `gorm:"size:128" json:"handler_name"`
+	Payload     string        `gorm:"type:text" json:"payload"`
+	NextRunAt   *time.Time    `gorm:"index:idx_status_next_run" json:"next_run_at"`
+	LastRunAt   *time.Time    `gorm:"index" json:"last_run_at"`
+	LastResult  string        `gorm:"type:text" json:"last_result"`
+	RetryCount  int           `gorm:"default:0" json:"retry_count"`
+	MaxRetry    int           `gorm:"default:3" json:"max_retry"`
+	CreatedAt   time.Time     `gorm:"autoCreateTime;index" json:"created_at"`
+	UpdatedAt   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // RunModel Run 数据模型
 type RunModel struct {
-	ID        string      `gorm:"primaryKey;size:64" json:"id"`
-	JobID     string      `gorm:"index;size:64" json:"job_id"`
-	Status    job.RunStatus `gorm:"size:32" json:"status"`
-	StartAt   time.Time   `json:"start_at"`
-	EndAt     *time.Time  `json:"end_at"`
-	Output    string      `gorm:"type:text" json:"output"`
-	Error     string      `gorm:"type:text" json:"error"`
-	Duration  int64       `gorm:"default:0" json:"duration"`
-	TraceID   string      `gorm:"size:64;index" json:"trace_id"`
-	CreatedAt time.Time   `gorm:"autoCreateTime" json:"created_at"`
+	ID        string        `gorm:"primaryKey;size:64" json:"id"`
+	JobID     string        `gorm:"index:idx_job_created;size:64" json:"job_id"`
+	Status    job.RunStatus `gorm:"size:32;index" json:"status"`
+	StartAt   time.Time     `json:"start_at"`
+	EndAt     *time.Time    `json:"end_at"`
+	Output    string        `gorm:"type:text" json:"output"`
+	Error     string        `gorm:"type:text" json:"error"`
+	Duration  int64         `gorm:"default:0;index" json:"duration"`
+	TraceID   string        `gorm:"size:64;index" json:"trace_id"`
+	CreatedAt time.Time     `gorm:"autoCreateTime;index:idx_job_created" json:"created_at"`
 }
 
-// TableName 设置表名
-func (JobModel) TableName() string {
-	return "qi_jobs"
-}
-
-// TableName 设置表名
-func (RunModel) TableName() string {
-	return "qi_runs"
-}
-
-// NewGormStorage 创建 GORM 存储
+// NewGormStorage 创建 GORM 存储（外部传入 DB，不负责关闭）
 func NewGormStorage(db *gorm.DB, opts ...Option) (*GormStorage, error) {
 	s := &GormStorage{
 		db:          db,
@@ -87,8 +74,11 @@ func NewGormStorage(db *gorm.DB, opts ...Option) (*GormStorage, error) {
 	}
 
 	// 迁移表结构
-	if err := db.AutoMigrate(&JobModel{}, &RunModel{}); err != nil {
-		return nil, fmt.Errorf("failed to migrate: %w", err)
+	if err := db.Table(s.jobTable).AutoMigrate(&JobModel{}); err != nil {
+		return nil, fmt.Errorf("failed to migrate jobs: %w", err)
+	}
+	if err := db.Table(s.runTable).AutoMigrate(&RunModel{}); err != nil {
+		return nil, fmt.Errorf("failed to migrate runs: %w", err)
 	}
 
 	return s, nil
@@ -118,58 +108,6 @@ func WithRunTableName(name string) Option {
 	}
 }
 
-// CreateGormDB 创建 GORM 数据库实例
-func CreateGormDB(dsn string, driver string, opts ...GormOption) (*gorm.DB, error) {
-	config := &gorm.Config{
-		NamingStrategy: schema.NamingStrategy{
-			TablePrefix:   "",
-			SingularTable: false,
-		},
-		Logger: logger.Default.LogMode(logger.Info),
-	}
-
-	for _, opt := range opts {
-		opt(config)
-	}
-
-	var db *gorm.DB
-	var err error
-
-	switch driver {
-	case "mysql":
-		db, err = gorm.Open(mysql.Open(dsn), config)
-	case "postgres":
-		db, err = gorm.Open(postgres.Open(dsn), config)
-	case "sqlite":
-		db, err = gorm.Open(sqlite.Open(dsn), config)
-	default:
-		return nil, fmt.Errorf("unsupported driver: %s", driver)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect database: %w", err)
-	}
-
-	return db, nil
-}
-
-// GormOption GORM 配置选项
-type GormOption func(*gorm.Config)
-
-// WithGormLogger 设置日志级别
-func WithGormLogger(level logger.LogLevel) GormOption {
-	return func(c *gorm.Config) {
-		c.Logger = logger.Default.LogMode(level)
-	}
-}
-
-// WithDryRun 设置干运行模式
-func WithGormDryRun() GormOption {
-	return func(c *gorm.Config) {
-		c.DryRun = true
-	}
-}
-
 // toJobModel 转换为数据模型
 func toJobModel(j *job.Job) *JobModel {
 	model := &JobModel{
@@ -177,10 +115,12 @@ func toJobModel(j *job.Job) *JobModel {
 		Name:        j.Name,
 		Description: j.Description,
 		Cron:        j.Cron,
+		Interval:    int64(j.Interval.Unwrap()),
 		Type:        j.Type,
 		Status:      j.Status,
 		HandlerName: j.HandlerName,
 		Payload:     j.Payload,
+		LastResult:  j.LastResult,
 		RetryCount:  j.RetryCount,
 		MaxRetry:    j.MaxRetry,
 	}
@@ -202,6 +142,7 @@ func toJob(m *JobModel) *job.Job {
 		Name:        m.Name,
 		Description: m.Description,
 		Cron:        m.Cron,
+		Interval:    job.Duration(m.Interval),
 		Type:        m.Type,
 		Status:      m.Status,
 		HandlerName: m.HandlerName,
@@ -248,7 +189,7 @@ func toRun(m *RunModel) *job.Run {
 
 // CreateJob 创建任务
 func (s *GormStorage) CreateJob(ctx context.Context, j *job.Job) error {
-	if s.closed {
+	if s.closed.Load() {
 		return job.ErrStorageClosed
 	}
 
@@ -267,7 +208,7 @@ func (s *GormStorage) CreateJob(ctx context.Context, j *job.Job) error {
 
 // GetJob 获取任务
 func (s *GormStorage) GetJob(ctx context.Context, id string) (*job.Job, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return nil, job.ErrStorageClosed
 	}
 
@@ -285,7 +226,7 @@ func (s *GormStorage) GetJob(ctx context.Context, id string) (*job.Job, error) {
 
 // UpdateJob 更新任务
 func (s *GormStorage) UpdateJob(ctx context.Context, j *job.Job) error {
-	if s.closed {
+	if s.closed.Load() {
 		return job.ErrStorageClosed
 	}
 
@@ -295,7 +236,7 @@ func (s *GormStorage) UpdateJob(ctx context.Context, j *job.Job) error {
 
 // DeleteJob 删除任务
 func (s *GormStorage) DeleteJob(ctx context.Context, id string) error {
-	if s.closed {
+	if s.closed.Load() {
 		return job.ErrStorageClosed
 	}
 
@@ -317,7 +258,7 @@ func (s *GormStorage) DeleteJob(ctx context.Context, id string) error {
 
 // ListJobs 列出任务
 func (s *GormStorage) ListJobs(ctx context.Context, status job.JobStatus) ([]*job.Job, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return nil, job.ErrStorageClosed
 	}
 
@@ -342,7 +283,7 @@ func (s *GormStorage) ListJobs(ctx context.Context, status job.JobStatus) ([]*jo
 
 // CreateRun 创建执行记录
 func (s *GormStorage) CreateRun(ctx context.Context, r *job.Run) error {
-	if s.closed {
+	if s.closed.Load() {
 		return job.ErrStorageClosed
 	}
 
@@ -352,7 +293,7 @@ func (s *GormStorage) CreateRun(ctx context.Context, r *job.Run) error {
 
 // UpdateRun 更新执行记录
 func (s *GormStorage) UpdateRun(ctx context.Context, r *job.Run) error {
-	if s.closed {
+	if s.closed.Load() {
 		return job.ErrStorageClosed
 	}
 
@@ -362,12 +303,12 @@ func (s *GormStorage) UpdateRun(ctx context.Context, r *job.Run) error {
 
 // GetRuns 获取执行记录
 func (s *GormStorage) GetRuns(ctx context.Context, jobID string, limit int) ([]*job.Run, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return nil, job.ErrStorageClosed
 	}
 
 	if limit <= 0 {
-		limit = 10
+		limit = job.DefaultRunLimit
 	}
 
 	var models []RunModel
@@ -391,7 +332,7 @@ func (s *GormStorage) GetRuns(ctx context.Context, jobID string, limit int) ([]*
 
 // GetJobRunCount 获取任务执行次数
 func (s *GormStorage) GetJobRunCount(ctx context.Context, jobID string) (int64, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return 0, job.ErrStorageClosed
 	}
 
@@ -400,20 +341,15 @@ func (s *GormStorage) GetJobRunCount(ctx context.Context, jobID string) (int64, 
 	return count, err
 }
 
-// Close 关闭存储
+// Close 关闭存储（DB 由外部管理，不在此关闭）
 func (s *GormStorage) Close() error {
-	s.closed = true
-	// 关闭底层数据库连接
-	sqlDB, err := s.db.DB()
-	if err != nil {
-		return err
-	}
-	return sqlDB.Close()
+	s.closed.Store(true)
+	return nil
 }
 
 // Ping 检查存储状态
 func (s *GormStorage) Ping(ctx context.Context) error {
-	if s.closed {
+	if s.closed.Load() {
 		return job.ErrStorageClosed
 	}
 
@@ -427,7 +363,7 @@ func (s *GormStorage) Ping(ctx context.Context) error {
 
 // GetDueJobs 获取到期的任务
 func (s *GormStorage) GetDueJobs(ctx context.Context) ([]*job.Job, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return nil, job.ErrStorageClosed
 	}
 
@@ -448,4 +384,38 @@ func (s *GormStorage) GetDueJobs(ctx context.Context) ([]*job.Job, error) {
 	}
 
 	return jobs, nil
+}
+
+// BatchUpdateJobs 批量更新任务（单事务提交）
+func (s *GormStorage) BatchUpdateJobs(ctx context.Context, jobs []*job.Job) error {
+	if s.closed.Load() {
+		return job.ErrStorageClosed
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, j := range jobs {
+			model := toJobModel(j)
+			if err := tx.Table(s.jobTable).Save(model).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// BatchUpdateRuns 批量更新执行记录（单事务提交）
+func (s *GormStorage) BatchUpdateRuns(ctx context.Context, runs []*job.Run) error {
+	if s.closed.Load() {
+		return job.ErrStorageClosed
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, r := range runs {
+			model := toRunModel(r)
+			if err := tx.Table(s.runTable).Save(model).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

@@ -42,7 +42,7 @@ func (s *MemoryStorage) CreateJob(ctx context.Context, j *job.Job) error {
 		return job.ErrJobAlreadyExists
 	}
 
-	s.jobs[j.ID] = j
+	s.jobs[j.ID] = j.Clone()
 	return nil
 }
 
@@ -137,7 +137,8 @@ func (s *MemoryStorage) CreateRun(ctx context.Context, r *job.Run) error {
 		r.ID = uuid.New().String()
 	}
 
-	s.runs[r.ID] = r
+	runCopy := *r
+	s.runs[r.ID] = &runCopy
 	s.jobRuns[r.JobID] = append(s.jobRuns[r.JobID], r.ID)
 
 	return nil
@@ -177,7 +178,7 @@ func (s *MemoryStorage) GetRuns(ctx context.Context, jobID string, limit int) ([
 	}
 
 	if limit <= 0 {
-		limit = 10
+		limit = job.DefaultRunLimit
 	}
 
 	results := make([]*job.Run, 0, limit)
@@ -246,4 +247,41 @@ func (s *MemoryStorage) GetNextRunTime(ctx context.Context, status job.JobStatus
 	}
 
 	return jobs, nil
+}
+
+// BatchUpdateJobs 批量更新任务（单次加锁）
+func (s *MemoryStorage) BatchUpdateJobs(ctx context.Context, jobs []*job.Job) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return job.ErrStorageClosed
+	}
+
+	for _, j := range jobs {
+		if _, exists := s.jobs[j.ID]; !exists {
+			return job.ErrJobNotFound
+		}
+		s.jobs[j.ID] = j.Clone()
+	}
+	return nil
+}
+
+// BatchUpdateRuns 批量更新执行记录（单次加锁）
+func (s *MemoryStorage) BatchUpdateRuns(ctx context.Context, runs []*job.Run) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return job.ErrStorageClosed
+	}
+
+	for _, r := range runs {
+		if _, exists := s.runs[r.ID]; !exists {
+			return fmt.Errorf("run not found: %s", r.ID)
+		}
+		runCopy := *r
+		s.runs[r.ID] = &runCopy
+	}
+	return nil
 }

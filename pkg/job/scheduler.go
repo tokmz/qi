@@ -17,20 +17,26 @@ const tracerName = "qi.job"
 
 // DefaultScheduler 默认调度器实现
 type DefaultScheduler struct {
-	storage     Storage
-	handlers    map[string]Handler
-	cron        *cron.Cron
+	storage      Storage
+	cron         *cron.Cron
+	config       *Config
+	logger       Logger
+	semaphore    chan struct{}  // 并发安全的信号量
+	stopChan     chan struct{}  // 并发安全的停止信号
+	stopOnce     sync.Once      // 确保只关闭一次
+	wg           sync.WaitGroup // 等待所有任务完成
+	batchUpdater *BatchUpdater  // 批量更新器（可选）
+	cache        *LRUCache      // LRU 缓存（可选）
+	metrics      *Metrics       // 性能监控指标
+
+	// 以下字段受 mu 保护
 	mu          sync.RWMutex
-	started     bool
-	stopChan    chan struct{}
-	stopOnce    sync.Once
-	wg          sync.WaitGroup
+	handlers    map[string]Handler      // 已注册的处理器
+	started     bool                    // 调度器是否已启动
 	jobRegistry map[string]*Job         // 本地任务缓存
 	cronEntries map[string]cron.EntryID // jobID -> cron entry ID
 	runningJobs map[string]bool         // 正在执行的任务ID集合
-	semaphore   chan struct{}           // 并发信号量
-	config      *Config
-	logger      Logger
+	jobHeap     *jobHeap                // 任务优先队列（按 NextRunAt 排序）
 }
 
 // NewScheduler 创建调度器
@@ -47,7 +53,7 @@ func NewScheduler(storage Storage, config *Config) *DefaultScheduler {
 		config.ConcurrentRuns = 5 // 默认并发数
 	}
 
-	return &DefaultScheduler{
+	s := &DefaultScheduler{
 		storage:     storage,
 		handlers:    make(map[string]Handler),
 		cron:        cron.New(cron.WithSeconds()),
@@ -55,10 +61,24 @@ func NewScheduler(storage Storage, config *Config) *DefaultScheduler {
 		jobRegistry: make(map[string]*Job),
 		cronEntries: make(map[string]cron.EntryID),
 		runningJobs: make(map[string]bool),
+		jobHeap:     newJobHeap(),
 		semaphore:   make(chan struct{}, config.ConcurrentRuns),
 		config:      config,
 		logger:      config.Logger,
+		metrics:     NewMetrics(),
 	}
+
+	// 启用批量更新器（可选）
+	if config.EnableBatchUpdate {
+		s.batchUpdater = NewBatchUpdater(storage, config.Logger, config.BatchSize, config.BatchFlushInterval)
+	}
+
+	// 启用 LRU 缓存（可选）
+	if config.EnableCache {
+		s.cache = NewLRUCache(config.CacheCapacity, config.CacheTTL, storage, config.Logger)
+	}
+
+	return s
 }
 
 // RegisterHandler 注册任务处理器
@@ -113,7 +133,17 @@ func (s *DefaultScheduler) AddJob(ctx context.Context, j *Job) error {
 	// 添加到本地注册表
 	s.mu.Lock()
 	s.jobRegistry[j.ID] = j
+
+	// 添加到优先队列（仅非 Cron 任务）
+	if j.Type != JobTypeCron && j.NextRunAt != nil {
+		s.jobHeap.Add(j)
+	}
+	heapSize := s.jobHeap.Size()
 	s.mu.Unlock()
+
+	// 记录指标
+	s.metrics.RecordJobAdded()
+	s.metrics.UpdateHeapSize(int64(heapSize))
 
 	// 如果调度器已启动，需要将任务添加到调度器
 	if started {
@@ -138,6 +168,11 @@ func (s *DefaultScheduler) RemoveJob(ctx context.Context, id string) error {
 				delete(s.cronEntries, id)
 			}
 		}
+
+		// 从优先队列中移除
+		if job.Type != JobTypeCron {
+			s.jobHeap.Remove(id)
+		}
 	}
 	delete(s.jobRegistry, id)
 	s.mu.Unlock()
@@ -146,50 +181,80 @@ func (s *DefaultScheduler) RemoveJob(ctx context.Context, id string) error {
 	return s.storage.DeleteJob(ctx, id)
 }
 
-// PauseJob 暂停任务
+// PauseJob 暂停任务（两阶段提交）
 func (s *DefaultScheduler) PauseJob(ctx context.Context, id string) error {
-	s.mu.Lock()
+	// 阶段 1：检查任务存在并克隆
+	s.mu.RLock()
 	job, exists := s.jobRegistry[id]
 	if !exists {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return ErrJobNotFound
 	}
 
-	// 深拷贝任务对象
+	// 检查是否可以暂停
+	if job.Status == JobStatusPaused {
+		s.mu.RUnlock()
+		return nil // 已暂停，直接返回
+	}
+
+	// 在持有读锁时克隆任务，避免竞态
 	jobCopy := job.Clone()
+	s.mu.RUnlock()
+
+	// 修改克隆的状态
 	jobCopy.Status = JobStatusPaused
 
-	// 从注册表中移除
-	delete(s.jobRegistry, id)
+	// 阶段 2：先更新存储（不持有锁）
+	if err := s.storage.UpdateJob(ctx, jobCopy); err != nil {
+		return err
+	}
 
-	// 清除 cron entry 映射
-	if entryID, ok := s.cronEntries[id]; ok {
-		if s.started {
-			s.cron.Remove(entryID)
-		}
+	// 阶段 3：存储更新成功后，再更新内存状态
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 双重检查任务是否仍存在（可能已被删除）
+	job, exists = s.jobRegistry[id]
+	if !exists {
+		return ErrJobNotFound
+	}
+
+	// 原地修改状态，不删除对象
+	job.Status = JobStatusPaused
+
+	// 清理 cron entry
+	if entryID, ok := s.cronEntries[id]; ok && s.started {
+		s.cron.Remove(entryID)
 		delete(s.cronEntries, id)
 	}
-	s.mu.Unlock()
 
-	// 更新存储
-	if err := s.storage.UpdateJob(ctx, jobCopy); err != nil {
-		// 更新失败，恢复注册表
-		s.mu.Lock()
-		s.jobRegistry[id] = job
-		s.mu.Unlock()
-		return err
+	// 从优先队列中移除
+	if job.Type != JobTypeCron {
+		s.jobHeap.Remove(id)
+	}
+
+	// 更新缓存
+	if s.cache != nil {
+		s.cache.Set(id, job)
 	}
 
 	return nil
 }
 
-// ResumeJob 恢复任务
+// ResumeJob 恢复任务（两阶段提交）
 func (s *DefaultScheduler) ResumeJob(ctx context.Context, id string) error {
+	// 阶段 1：从存储加载最新状态
 	job, err := s.storage.GetJob(ctx, id)
 	if err != nil {
 		return err
 	}
 
+	// 验证任务状态（必须是 Paused）
+	if job.Status != JobStatusPaused {
+		return NewError(ErrCodeJobPaused, "job is not paused", nil)
+	}
+
+	// 验证处理器存在
 	s.mu.RLock()
 	_, handlerExists := s.handlers[job.HandlerName]
 	s.mu.RUnlock()
@@ -198,37 +263,50 @@ func (s *DefaultScheduler) ResumeJob(ctx context.Context, id string) error {
 		return NewError(ErrCodeHandlerNotFound, "handler not found: "+job.HandlerName, nil)
 	}
 
-	s.mu.Lock()
+	// 阶段 2：修改状态并计算下次执行时间
 	job.Status = JobStatusPending
 	if err := s.scheduleNextRun(job); err != nil {
-		s.mu.Unlock()
 		return err
 	}
-	s.mu.Unlock()
 
+	// 阶段 3：先更新存储（不持有锁）
 	if err := s.storage.UpdateJob(ctx, job); err != nil {
 		return err
 	}
 
+	// 阶段 4：存储成功后，更新内存状态
 	s.mu.Lock()
-	s.jobRegistry[id] = job
-	if job.Type == JobTypeCron && job.Cron != "" {
-		jobID := job.ID
-		entryID, err := s.cron.AddFunc(job.Cron, func() {
-			jobCtx, cancel := context.WithTimeout(context.Background(), s.config.JobTimeout)
-			defer cancel()
-			j, err := s.storage.GetJob(jobCtx, jobID)
-			if err != nil {
-				s.logger.Error("[job] resume cron 回调获取任务 %s 失败: %v", jobID, err)
-				return
-			}
-			s.executeJob(jobCtx, j)
-		})
-		if err == nil {
-			s.cronEntries[jobID] = entryID
-		}
+	defer s.mu.Unlock()
+
+	// 原地修改或添加到注册表
+	if existingJob, exists := s.jobRegistry[id]; exists {
+		// 原地修改状态
+		existingJob.Status = JobStatusPending
+		existingJob.NextRunAt = job.NextRunAt
+	} else {
+		// 不存在则添加
+		s.jobRegistry[id] = job
 	}
-	s.mu.Unlock()
+
+	// 重新添加到调度器
+	if job.Type == JobTypeCron && job.Cron != "" && s.started {
+		entryID, err := s.cron.AddFunc(job.Cron, s.makeCronCallback(job.ID))
+		if err != nil {
+			s.logger.Error("[job] resume 添加 cron 任务 %s 失败: %v", job.ID, err)
+			return err
+		}
+		s.cronEntries[job.ID] = entryID
+	}
+
+	// 添加到优先队列（仅非 Cron 任务）
+	if job.Type != JobTypeCron && job.NextRunAt != nil {
+		s.jobHeap.Add(job)
+	}
+
+	// 更新缓存
+	if s.cache != nil {
+		s.cache.Set(id, job)
+	}
 
 	return nil
 }
@@ -255,22 +333,44 @@ func (s *DefaultScheduler) TriggerJob(ctx context.Context, id string) error {
 		return ErrJobPaused
 	}
 
-	jobID := id
-	go func() {
+	// 通过参数传递避免闭包捕获变量
+	s.wg.Add(1)
+	go func(jobID string) {
+		defer s.wg.Done()
+		defer func() {
+			s.mu.Lock()
+			delete(s.runningJobs, jobID)
+			s.mu.Unlock()
+		}()
+
+		// 使用独立 context，避免调用方 context 取消导致任务中断
 		jobCtx, cancel := context.WithTimeout(context.Background(), s.config.JobTimeout)
 		defer cancel()
+
 		j, err := s.storage.GetJob(jobCtx, jobID)
 		if err != nil {
+			s.logger.Error("[job] TriggerJob 获取任务 %s 失败: %v", jobID, err)
 			return
 		}
 		s.executeJob(jobCtx, j)
-	}()
+	}(id)
 
 	return nil
 }
 
 // GetJob 获取任务
 func (s *DefaultScheduler) GetJob(ctx context.Context, id string) (*Job, error) {
+	// 优先从缓存获取
+	if s.cache != nil {
+		job, err := s.cache.Get(ctx, id)
+		if err == nil {
+			s.metrics.RecordCacheHit()
+			return job, nil
+		}
+		s.metrics.RecordCacheMiss()
+	}
+
+	// 缓存未启用或未命中，直接从存储获取
 	return s.storage.GetJob(ctx, id)
 }
 
@@ -291,8 +391,24 @@ func (s *DefaultScheduler) Start(ctx context.Context) error {
 		s.mu.Unlock()
 		return ErrSchedulerAlreadyStarted
 	}
+	s.stopChan = make(chan struct{})
+	s.stopOnce = sync.Once{}
 	s.started = true
 	s.mu.Unlock()
+
+	// 启动批量更新器（如果启用）
+	if s.batchUpdater != nil {
+		s.batchUpdater.Start()
+	}
+
+	// 启动缓存清理（如果启用）
+	if s.cache != nil {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.cache.StartCleanup(s.config.CacheCleanupInterval, s.stopChan)
+		}()
+	}
 
 	// 恢复所有待执行的任务
 	jobs, err := s.storage.ListJobs(ctx, JobStatusPending)
@@ -303,6 +419,47 @@ func (s *DefaultScheduler) Start(ctx context.Context) error {
 	for _, j := range jobs {
 		if err := s.scheduleJob(j); err != nil {
 			s.logger.Error("[job] 启动任务 %s 失败: %v", j.ID, err)
+		}
+
+		// 添加到优先队列（仅非 Cron 任务）
+		if j.Type != JobTypeCron && j.NextRunAt != nil {
+			s.mu.Lock()
+			s.jobHeap.Add(j)
+			s.mu.Unlock()
+		}
+
+		// 添加到缓存
+		if s.cache != nil {
+			s.cache.Set(j.ID, j)
+		}
+	}
+
+	// 恢复崩溃残留的 running 状态任务
+	runningJobs, err := s.storage.ListJobs(ctx, JobStatusRunning)
+	if err != nil {
+		s.logger.Error("[job] 恢复 running 任务失败: %v", err)
+	} else {
+		for _, j := range runningJobs {
+			// 重置为 pending 状态
+			j.Status = JobStatusPending
+			if err := s.storage.UpdateJob(ctx, j); err != nil {
+				s.logger.Error("[job] 重置任务 %s 状态失败: %v", j.ID, err)
+				continue
+			}
+
+			if err := s.scheduleJob(j); err != nil {
+				s.logger.Error("[job] 启动任务 %s 失败: %v", j.ID, err)
+			}
+
+			if j.Type != JobTypeCron && j.NextRunAt != nil {
+				s.mu.Lock()
+				s.jobHeap.Add(j)
+				s.mu.Unlock()
+			}
+
+			if s.cache != nil {
+				s.cache.Set(j.ID, j)
+			}
 		}
 	}
 
@@ -336,6 +493,11 @@ func (s *DefaultScheduler) Stop(ctx context.Context) error {
 
 	// 等待所有任务完成
 	s.wg.Wait()
+
+	// 停止批量更新器（如果启用）
+	if s.batchUpdater != nil {
+		s.batchUpdater.Stop()
+	}
 
 	return nil
 }
@@ -371,40 +533,52 @@ func (s *DefaultScheduler) scheduleNextRun(job *Job) error {
 		}
 
 	case JobTypeInterval:
-		// 间隔任务
-		if job.NextRunAt == nil {
-			job.NextRunAt = &now
+		// 间隔任务：基于上次执行时间或当前时间推进
+		if job.Interval <= 0 {
+			return NewError(ErrCodeInvalidCron, "interval is required for interval job", nil)
+		}
+		if job.NextRunAt == nil || job.NextRunAt.Before(now) {
+			next := now.Add(job.Interval.Unwrap())
+			job.NextRunAt = &next
 		}
 	}
 
 	return nil
 }
 
+// makeCronCallback 创建 cron 回调函数
+func (s *DefaultScheduler) makeCronCallback(jobID string) func() {
+	return func() {
+		jobCtx, cancel := context.WithTimeout(context.Background(), s.config.JobTimeout)
+		defer cancel()
+
+		j, err := s.storage.GetJob(jobCtx, jobID)
+		if err != nil {
+			s.logger.Error("[job] cron 回调获取任务 %s 失败: %v", jobID, err)
+			return
+		}
+		s.executeJob(jobCtx, j)
+	}
+}
+
 // scheduleJob 将任务添加到调度器
 func (s *DefaultScheduler) scheduleJob(job *Job) error {
 	// 验证处理器是否存在
-	if _, ok := s.handlers[job.HandlerName]; !ok {
+	s.mu.RLock()
+	_, ok := s.handlers[job.HandlerName]
+	s.mu.RUnlock()
+	if !ok {
 		return NewError(ErrCodeHandlerNotFound, "handler not found: "+job.HandlerName, nil)
 	}
 
 	switch job.Type {
 	case JobTypeCron:
-		jobID := job.ID
-		entryID, err := s.cron.AddFunc(job.Cron, func() {
-			jobCtx, cancel := context.WithTimeout(context.Background(), s.config.JobTimeout)
-			defer cancel()
-			j, err := s.storage.GetJob(jobCtx, jobID)
-			if err != nil {
-				s.logger.Error("[job] cron 回调获取任务 %s 失败: %v", jobID, err)
-				return
-			}
-			s.executeJob(jobCtx, j)
-		})
+		entryID, err := s.cron.AddFunc(job.Cron, s.makeCronCallback(job.ID))
 		if err != nil {
 			return err
 		}
 		s.mu.Lock()
-		s.cronEntries[jobID] = entryID
+		s.cronEntries[job.ID] = entryID
 		s.mu.Unlock()
 
 	case JobTypeOnce, JobTypeInterval:
@@ -420,6 +594,9 @@ func (s *DefaultScheduler) runScheduler(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	cleanupTicker := time.NewTicker(5 * time.Minute)
+	defer cleanupTicker.Stop()
+
 	for {
 		select {
 		case <-s.stopChan:
@@ -428,26 +605,57 @@ func (s *DefaultScheduler) runScheduler(ctx context.Context) {
 			return
 		case now := <-ticker.C:
 			s.processDueJobs(ctx, now)
+		case <-cleanupTicker.C:
+			s.mu.Lock()
+			count := s.jobHeap.CleanCompleted()
+			heapSize := s.jobHeap.Size()
+			s.mu.Unlock()
+			if count > 0 {
+				s.logger.Debug("[job] 清理已完成任务: %d 个", count)
+				s.metrics.UpdateHeapSize(int64(heapSize))
+			}
 		}
 	}
 }
 
-// processDueJobs 处理到期的任务
+// processDueJobs 处理到期的任务（优化版：使用优先队列）
 func (s *DefaultScheduler) processDueJobs(ctx context.Context, now time.Time) {
 	s.mu.Lock()
-	var dueJobs []*Job
-	for _, job := range s.jobRegistry {
-		if job.Status == JobStatusPending && job.NextRunAt != nil && job.NextRunAt.Before(now) {
-			if !s.runningJobs[job.ID] {
-				dueJobs = append(dueJobs, job)
+	// 从优先队列中弹出所有到期的任务
+	dueJobs := s.jobHeap.PopDue(now)
+
+	if len(dueJobs) == 0 {
+		s.mu.Unlock()
+		return
+	}
+
+	// 过滤掉已在运行的任务
+	var readyJobs []*Job
+	for _, job := range dueJobs {
+		// 检查任务是否存在于注册表且未在运行
+		if registryJob, exists := s.jobRegistry[job.ID]; exists {
+			if registryJob.Status == JobStatusPending && !s.runningJobs[job.ID] {
+				readyJobs = append(readyJobs, registryJob)
 				s.runningJobs[job.ID] = true
+			} else {
+				// 任务状态不符合执行条件，重新加入堆
+				if registryJob.NextRunAt != nil {
+					s.jobHeap.Add(registryJob)
+				}
 			}
 		}
 	}
 	s.mu.Unlock()
 
-	for _, job := range dueJobs {
-		s.executeJob(ctx, job)
+	// 异步执行任务，避免阻塞调度器（使用 WaitGroup 追踪）
+	for _, job := range readyJobs {
+		s.wg.Add(1)
+		go func(j *Job) {
+			defer s.wg.Done()
+			jobCtx, cancel := context.WithTimeout(context.Background(), s.config.JobTimeout)
+			defer cancel()
+			s.executeJob(jobCtx, j)
+		}(job)
 	}
 }
 
@@ -458,7 +666,16 @@ func (s *DefaultScheduler) executeJob(ctx context.Context, j *Job) {
 	case s.semaphore <- struct{}{}:
 		defer func() { <-s.semaphore }()
 	default:
-		// 并发数已满，跳过本次执行
+		// 并发数已满，将任务重新加入堆等待下次调度
+		s.mu.Lock()
+		delete(s.runningJobs, j.ID)
+		if registryJob, exists := s.jobRegistry[j.ID]; exists {
+			if registryJob.NextRunAt != nil {
+				s.jobHeap.Add(registryJob)
+			}
+		}
+		s.mu.Unlock()
+		s.logger.Warn("[job] 任务 %s 跳过执行（并发数已满）", j.ID)
 		return
 	}
 
@@ -474,52 +691,54 @@ func (s *DefaultScheduler) executeJob(ctx context.Context, j *Job) {
 	)
 	defer span.End()
 
-	job := j.Clone()
+	// 加锁检查状态和获取处理器
+	s.mu.Lock()
 
-	handler, ok := s.handlers[job.HandlerName]
+	handler, ok := s.handlers[j.HandlerName]
 	if !ok {
-		s.mu.Lock()
-		delete(s.runningJobs, job.ID)
+		delete(s.runningJobs, j.ID)
 		s.mu.Unlock()
 		span.SetStatus(codes.Error, "handler not found")
 		return
 	}
 
-	s.mu.Lock()
+	// 检查注册表中的实际状态
+	registryJob, exists := s.jobRegistry[j.ID]
+	if !exists {
+		delete(s.runningJobs, j.ID)
+		s.mu.Unlock()
+		span.SetStatus(codes.Error, "job not found in registry")
+		return
+	}
 
-	if job.Status == JobStatusRunning {
-		delete(s.runningJobs, job.ID)
+	if registryJob.Status == JobStatusRunning {
+		delete(s.runningJobs, j.ID)
 		s.mu.Unlock()
 		span.SetStatus(codes.Ok, "already running")
 		return
 	}
 
-	job.Status = JobStatusRunning
-	job.RetryCount = 0
+	// 更新注册表状态
+	registryJob.Status = JobStatusRunning
 	now := time.Now()
-	job.LastRunAt = &now
+	registryJob.LastRunAt = &now
 
-	if registryJob, exists := s.jobRegistry[job.ID]; exists {
-		registryJob.Status = JobStatusRunning
-	}
+	// 克隆任务用于后续处理（在释放锁前）
+	job := registryJob.Clone()
+
+	// 释放锁，避免在 I/O 操作时持有锁
 	s.mu.Unlock()
 
+	// 更新存储（不持有锁）
 	if err := s.storage.UpdateJob(ctx, job); err != nil {
-		s.mu.Lock()
-		if registryJob, exists := s.jobRegistry[job.ID]; exists {
-			registryJob.Status = JobStatusPending
-		}
-		delete(s.runningJobs, job.ID)
-		s.mu.Unlock()
+		s.logger.Error("[job] 更新任务 %s 状态失败: %v，尝试恢复", job.ID, err)
+		s.recoverJobState(job.ID, JobStatusPending)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		job.Status = JobStatusPending
-		if updateErr := s.storage.UpdateJob(ctx, job); updateErr != nil {
-			s.logger.Error("[job] 恢复任务 %s 状态失败: %v", job.ID, updateErr)
-		}
 		return
 	}
 
+	// 创建执行记录（不持有锁）
 	run := &Run{
 		ID:      uuid.New().String(),
 		JobID:   job.ID,
@@ -529,18 +748,10 @@ func (s *DefaultScheduler) executeJob(ctx context.Context, j *Job) {
 	}
 
 	if err := s.storage.CreateRun(ctx, run); err != nil {
-		s.mu.Lock()
-		if registryJob, exists := s.jobRegistry[job.ID]; exists {
-			registryJob.Status = JobStatusPending
-		}
-		delete(s.runningJobs, job.ID)
-		s.mu.Unlock()
+		s.logger.Error("[job] 创建执行记录失败: %v，尝试恢复", err)
+		s.recoverJobState(job.ID, JobStatusPending)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		job.Status = JobStatusPending
-		if updateErr := s.storage.UpdateJob(ctx, job); updateErr != nil {
-			s.logger.Error("[job] 恢复任务 %s 状态失败: %v", job.ID, updateErr)
-		}
 		return
 	}
 
@@ -549,6 +760,14 @@ func (s *DefaultScheduler) executeJob(ctx context.Context, j *Job) {
 	startTime := time.Now()
 	output, execErr := handler.Execute(ctx, job.Payload)
 	duration := time.Since(startTime).Milliseconds()
+
+	// 记录执行指标
+	if execErr != nil {
+		s.metrics.RecordRunFailed(duration)
+		s.metrics.RecordHandlerError()
+	} else {
+		s.metrics.RecordRunSuccess(duration)
+	}
 
 	// 更新执行记录
 	endTime := time.Now()
@@ -602,17 +821,26 @@ func (s *DefaultScheduler) executeJob(ctx context.Context, j *Job) {
 		registryJob.LastResult = job.LastResult
 		registryJob.RetryCount = job.RetryCount
 		registryJob.NextRunAt = job.NextRunAt
+
+		// 如果任务需要重新调度，添加到优先队列
+		if job.Type != JobTypeCron && job.Status == JobStatusPending && job.NextRunAt != nil {
+			s.jobHeap.Update(registryJob)
+		}
 	}
 
 	delete(s.runningJobs, job.ID)
+
+	// Clone for persistence (while still holding lock)
+	jobForPersist := job.Clone()
+	runForPersist := *run
 
 	s.mu.Unlock()
 
 	// 设置执行结果属性
 	span.SetAttributes(
 		attribute.Int64("run.duration_ms", duration),
-		attribute.String("run.status", string(run.Status)),
-		attribute.Int("job.retry_count", job.RetryCount),
+		attribute.String("run.status", string(runForPersist.Status)),
+		attribute.Int("job.retry_count", jobForPersist.RetryCount),
 	)
 
 	if execErr != nil {
@@ -620,12 +848,33 @@ func (s *DefaultScheduler) executeJob(ctx context.Context, j *Job) {
 		span.SetStatus(codes.Error, execErr.Error())
 	}
 
-	if err := s.storage.UpdateJob(ctx, job); err != nil {
-		s.logger.Error("[job] 更新任务 %s 状态失败: %v", job.ID, err)
+	// 使用批量更新器（如果启用）
+	if s.batchUpdater != nil {
+		s.batchUpdater.UpdateJob(ctx, jobForPersist)
+		s.batchUpdater.UpdateRun(ctx, &runForPersist)
+	} else {
+		// 同步更新
+		if err := s.storage.UpdateJob(ctx, jobForPersist); err != nil {
+			s.logger.Error("[job] 更新任务 %s 状态失败: %v", jobForPersist.ID, err)
+		}
+		if err := s.storage.UpdateRun(ctx, &runForPersist); err != nil {
+			s.logger.Error("[job] 更新执行记录 %s 失败: %v", runForPersist.ID, err)
+		}
 	}
-	if err := s.storage.UpdateRun(ctx, run); err != nil {
-		s.logger.Error("[job] 更新执行记录 %s 失败: %v", run.ID, err)
+}
+
+// GetMetrics 获取性能指标
+func (s *DefaultScheduler) GetMetrics() *Metrics {
+	// 更新实时指标
+	s.mu.RLock()
+	heapSize := s.jobHeap.Size()
+	s.mu.RUnlock()
+	s.metrics.UpdateHeapSize(int64(heapSize))
+	if s.cache != nil {
+		s.metrics.UpdateCacheSize(int64(s.cache.Size()))
 	}
+
+	return s.metrics
 }
 
 // GetHandler 获取已注册的处理器
@@ -634,4 +883,15 @@ func (s *DefaultScheduler) GetHandler(name string) (Handler, bool) {
 	defer s.mu.RUnlock()
 	h, ok := s.handlers[name]
 	return h, ok
+}
+
+// recoverJobState 恢复任务状态（错误处理辅助函数）
+func (s *DefaultScheduler) recoverJobState(jobID string, status JobStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if regJob, exists := s.jobRegistry[jobID]; exists {
+		regJob.Status = status
+	}
+	delete(s.runningJobs, jobID)
 }
