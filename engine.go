@@ -34,6 +34,9 @@ func New(opts ...Option) *Engine {
 		gin.SetMode(config.Mode)
 	}
 
+	// 静默 Gin 默认输出，由 Qi 自行打印
+	silenceGin()
+
 	// 创建 Gin Engine
 	ginEngine := gin.New()
 
@@ -109,9 +112,11 @@ func (e *Engine) Run(addr ...string) error {
 		MaxHeaderBytes: e.config.Server.MaxHeaderBytes,
 	}
 
+	// 打印 banner 和路由表
+	e.printBanner(address)
+
 	// 启动服务器
 	return e.serve(func() error {
-		log.Printf("服务器启动在 %s", address)
 		return e.server.ListenAndServe()
 	})
 }
@@ -128,9 +133,11 @@ func (e *Engine) RunTLS(addr, certFile, keyFile string) error {
 		MaxHeaderBytes: e.config.Server.MaxHeaderBytes,
 	}
 
+	// 打印 banner 和路由表
+	e.printBanner(addr)
+
 	// 启动服务器
 	return e.serve(func() error {
-		log.Printf("HTTPS 服务器启动在 %s", addr)
 		return e.server.ListenAndServeTLS(certFile, keyFile)
 	})
 }
