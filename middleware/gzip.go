@@ -88,21 +88,30 @@ func (g *gzipWriter) flush() {
 	}
 }
 
-// gzipPool gzip.Writer 对象池
-var gzipPools = sync.Map{}
+// gzip 压缩级别范围：-2 (HuffmanOnly) 到 9 (BestCompression)
+// 总共 12 个可能的值，用固定数组比 sync.Map 更高效
+const gzipPoolSize = 12 // index = level + 2
+
+var gzipPools [gzipPoolSize]sync.Pool
+
+func init() {
+	for i := range gzipPools {
+		level := i - 2
+		gzipPools[i] = sync.Pool{
+			New: func() any {
+				w, _ := gzip.NewWriterLevel(io.Discard, level)
+				return w
+			},
+		}
+	}
+}
 
 func getGzipPool(level int) *sync.Pool {
-	if pool, ok := gzipPools.Load(level); ok {
-		return pool.(*sync.Pool)
+	idx := level + 2
+	if idx < 0 || idx >= gzipPoolSize {
+		idx = gzip.DefaultCompression + 2
 	}
-	pool := &sync.Pool{
-		New: func() any {
-			w, _ := gzip.NewWriterLevel(io.Discard, level)
-			return w
-		},
-	}
-	actual, _ := gzipPools.LoadOrStore(level, pool)
-	return actual.(*sync.Pool)
+	return &gzipPools[idx]
 }
 
 // Gzip 创建 Gzip 压缩中间件

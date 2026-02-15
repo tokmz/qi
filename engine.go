@@ -79,9 +79,10 @@ func (e *Engine) Use(middlewares ...HandlerFunc) {
 }
 
 // Group 返回路由组
-func (e *Engine) Group(path string) *RouterGroup {
+func (e *Engine) Group(path string, middlewares ...HandlerFunc) *RouterGroup {
+	handlers := WrapMiddlewares(middlewares...)
 	return &RouterGroup{
-		group: e.engine.Group(path),
+		group: e.engine.Group(path, handlers...),
 	}
 }
 
