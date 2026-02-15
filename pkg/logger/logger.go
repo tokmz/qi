@@ -55,7 +55,7 @@ type Logger interface {
 // logger 日志实现
 type logger struct {
 	zap   *zap.Logger
-	level atomic.Value // 存储 zapcore.Level
+	level *atomic.Value // 使用指针，With 创建的子 Logger 共享父级别
 	hooks []Hook
 }
 
@@ -110,6 +110,7 @@ func New(config *Config) (Logger, error) {
 
 	l := &logger{
 		zap:   zapLogger,
+		level: &atomic.Value{},
 		hooks: config.Hooks,
 	}
 	l.level.Store(config.Level.toZapLevel())
@@ -195,10 +196,11 @@ func buildWriters(config *Config) ([]zapcore.WriteSyncer, error) {
 
 	// 文件输出
 	if config.File != "" {
-		writer, _, err := zap.Open(config.File)
+		writer, closeFn, err := zap.Open(config.File)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file %s: %w", config.File, err)
 		}
+		_ = closeFn // TODO: 在 Logger 增加 Close 方法后调用
 		writers = append(writers, writer)
 	}
 

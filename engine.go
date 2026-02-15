@@ -27,12 +27,10 @@ func New(opts ...Option) *Engine {
 		opt(config)
 	}
 
-	// 设置 Gin 模式（全局状态，仅在首次调用时设置）
+	// 设置 Gin 模式（全局状态）
 	// 注意：gin.SetMode 是全局操作，多次调用会相互覆盖
 	// 建议在程序启动时只创建一个 Engine 实例
-	if gin.Mode() == gin.DebugMode || config.Mode != gin.DebugMode {
-		gin.SetMode(config.Mode)
-	}
+	gin.SetMode(config.Mode)
 
 	// 静默 Gin 默认输出，由 Qi 自行打印
 	silenceGin()

@@ -67,7 +67,8 @@ func Timeout(cfgs ...*TimeoutConfig) qi.HandlerFunc {
 		c.Next()
 
 		// handler 完成后检查是否已超时
-		if ctx.Err() == context.DeadlineExceeded {
+		// 注意：仅在 handler 尚未写入响应时才返回 408
+		if ctx.Err() == context.DeadlineExceeded && !c.IsAborted() {
 			c.Fail(http.StatusRequestTimeout, cfg.TimeoutMessage)
 			c.Abort()
 		}
