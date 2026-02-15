@@ -9,6 +9,8 @@ Qi 框架中间件集合。
 | Tracing | tracing.go | OpenTelemetry 链路追踪 |
 | CORS | cors.go | 跨域资源共享 |
 | RateLimiter | ratelimit.go | 令牌桶限流 |
+| Timeout | timeout.go | 请求超时控制 |
+| Gzip | gzip.go | 响应压缩 |
 | I18n | i18n.go | 国际化语言识别 |
 
 > Logger 和 Recovery 内置在 qi 核心包中，`qi.New()` 默认启用 Recovery，`qi.Default()` 额外启用 Logger。
@@ -24,7 +26,11 @@ e.Use(middleware.Tracing())
 e.Use(middleware.CORS())
 // 3. 限流（在业务处理之前拦截超限请求）
 e.Use(middleware.RateLimiter())
-// 4. I18n（业务相关）
+// 4. 超时控制
+e.Use(middleware.Timeout())
+// 5. Gzip 压缩
+e.Use(middleware.Gzip())
+// 6. I18n（业务相关）
 e.Use(middleware.I18n(translator))
 ```
 
@@ -249,6 +255,88 @@ engine.Use(middleware.RateLimiter(&middleware.RateLimiterConfig{
 }
 ```
 
+## Timeout 超时中间件
+
+通过 `context.WithTimeout` 控制请求处理超时，防止慢请求长时间占用资源。
+
+### 使用
+
+```go
+import "qi/middleware"
+
+// 默认配置（30 秒超时）
+engine.Use(middleware.Timeout())
+
+// 自定义超时时间
+engine.Use(middleware.Timeout(&middleware.TimeoutConfig{
+    Timeout: 10 * time.Second,
+}))
+
+// 排除长耗时路径（如文件上传）
+engine.Use(middleware.Timeout(&middleware.TimeoutConfig{
+    Timeout:      30 * time.Second,
+    ExcludePaths: []string{"/upload", "/export"},
+}))
+```
+
+### 配置项
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| Timeout | time.Duration | `30s` | 请求超时时间 |
+| TimeoutMessage | string | `request timeout` | 超时响应消息 |
+| SkipFunc | func | nil | 跳过超时控制的判断函数 |
+| ExcludePaths | []string | nil | 排除的路径 |
+
+### 超时响应
+
+超时时返回 HTTP 408：
+
+```json
+{
+    "code": 408,
+    "message": "request timeout"
+}
+```
+
+## Gzip 压缩中间件
+
+对支持 gzip 的客户端自动压缩响应，减少传输体积。使用 `sync.Pool` 复用 gzip.Writer，支持最小长度阈值。
+
+### 使用
+
+```go
+import "qi/middleware"
+
+// 默认配置
+engine.Use(middleware.Gzip())
+
+// 自定义压缩级别
+engine.Use(middleware.Gzip(&middleware.GzipConfig{
+    Level: gzip.BestSpeed,
+}))
+
+// 排除静态资源和图片
+engine.Use(middleware.Gzip(&middleware.GzipConfig{
+    ExcludeExtensions: []string{".png", ".jpg", ".gif", ".webp"},
+    ExcludePaths:      []string{"/static"},
+}))
+
+// 调整最小压缩长度
+engine.Use(middleware.Gzip(&middleware.GzipConfig{
+    MinLength: 1024, // 小于 1KB 不压缩
+}))
+```
+
+### 配置项
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| Level | int | `gzip.DefaultCompression` | 压缩级别 |
+| MinLength | int | `256` | 最小压缩长度（字节） |
+| ExcludePaths | []string | nil | 排除的路径 |
+| ExcludeExtensions | []string | nil | 排除的文件扩展名 |
+
 ## 文件结构
 
 ```
@@ -256,6 +344,8 @@ middleware/
 ├── README.md       # 本文档
 ├── tracing.go      # OpenTelemetry 链路追踪中间件
 ├── cors.go         # CORS 跨域中间件
+├── timeout.go      # 请求超时中间件
+├── gzip.go         # Gzip 压缩中间件
 ├── i18n.go         # 国际化中间件
 └── ratelimit.go    # 限流中间件
 ```

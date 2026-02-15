@@ -37,6 +37,11 @@ func (c *Context) Writer() gin.ResponseWriter {
 	return c.ctx.Writer
 }
 
+// SetWriter 替换底层的 ResponseWriter（用于 Gzip 等中间件）
+func (c *Context) SetWriter(w gin.ResponseWriter) {
+	c.ctx.Writer = w
+}
+
 // Param 获取路径参数
 func (c *Context) Param(key string) string {
 	return c.ctx.Param(key)
