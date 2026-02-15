@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"qi/pkg/errors"
+	"qi/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -327,17 +328,18 @@ func (c *Context) respond(statusCode int, resp *Response) {
 
 // RequestContext 返回标准库 context.Context，用于传递给 Service 层
 // 自动将 TraceID、UID、Language 注入到 context.Context
+// TraceID 和 UID 使用 logger 包的 context key，确保 logger.WithContext 能正确提取
 func (c *Context) RequestContext() context.Context {
 	ctx := c.ctx.Request.Context()
 
-	// 注入 TraceID
+	// 注入 TraceID（使用 logger 包的 key，确保 logger 能提取）
 	if traceID := GetContextTraceID(c); traceID != "" {
-		ctx = context.WithValue(ctx, contextKeyTraceID, traceID)
+		ctx = context.WithValue(ctx, logger.ContextKeyTraceID(), traceID)
 	}
 
-	// 注入 UID
+	// 注入 UID（使用 logger 包的 key，确保 logger 能提取）
 	if uid := GetContextUid(c); uid != 0 {
-		ctx = context.WithValue(ctx, contextKeyUid, uid)
+		ctx = context.WithValue(ctx, logger.ContextKeyUID(), uid)
 	}
 
 	// 注入 Language

@@ -18,8 +18,8 @@ type Config struct {
 	BufferSize int             // 缓冲区大小（默认 256KB）
 
 	// 功能配置
-	EnableCaller     bool // 是否记录调用位置（默认 true）
-	EnableStacktrace bool // 是否记录堆栈（Error 及以上，默认 true）
+	EnableCaller     *bool // 是否记录调用位置（默认 true）
+	EnableStacktrace *bool // 是否记录堆栈（Error 及以上，默认 true）
 
 	// 扩展配置
 	EncoderConfig *zapcore.EncoderConfig // 自定义 Encoder 配置
@@ -41,7 +41,13 @@ func (c *Config) setDefaults() {
 	if !c.Console && c.File == "" && c.Rotate == nil {
 		c.Console = true
 	}
-	// 默认启用 Caller 和 Stacktrace
-	c.EnableCaller = true
-	c.EnableStacktrace = true
+	// 默认启用 Caller 和 Stacktrace（仅在用户未设置时）
+	if c.EnableCaller == nil {
+		c.EnableCaller = boolPtr(true)
+	}
+	if c.EnableStacktrace == nil {
+		c.EnableStacktrace = boolPtr(true)
+	}
 }
+
+func boolPtr(v bool) *bool { return &v }

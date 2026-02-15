@@ -57,14 +57,14 @@ func WithBufferSize(size int) Option {
 // WithCaller 设置是否记录调用位置
 func WithCaller(enable bool) Option {
 	return func(c *Config) {
-		c.EnableCaller = enable
+		c.EnableCaller = &enable
 	}
 }
 
 // WithStacktrace 设置是否记录堆栈
 func WithStacktrace(enable bool) Option {
 	return func(c *Config) {
-		c.EnableStacktrace = enable
+		c.EnableStacktrace = &enable
 	}
 }
 

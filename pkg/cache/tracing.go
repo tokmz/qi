@@ -101,16 +101,22 @@ func (t *tracedCache) wrapOperationMultiKeys(
 
 // Get 获取缓存（带链路追踪）
 func (t *tracedCache) Get(ctx context.Context, key string, value any) error {
-	err := t.Cache.Get(ctx, key, value)
-
-	span := trace.SpanFromContext(ctx)
-	if err == nil {
-		span.SetAttributes(attribute.Bool("cache.hit", true))
-	} else if errors.Is(err, ErrCacheNotFound) {
-		span.SetAttributes(attribute.Bool("cache.hit", false))
+	var result error
+	err := t.wrapOperation(ctx, "cache.Get", key, func(ctx context.Context) error {
+		result = t.Cache.Get(ctx, key, value)
+		span := trace.SpanFromContext(ctx)
+		if result == nil {
+			span.SetAttributes(attribute.Bool("cache.hit", true))
+		} else if errors.Is(result, ErrCacheNotFound) {
+			span.SetAttributes(attribute.Bool("cache.hit", false))
+			return nil // cache miss 不算错误
+		}
+		return result
+	})
+	if err != nil {
+		return err
 	}
-
-	return err
+	return result
 }
 
 // Set 设置缓存（带链路追踪）

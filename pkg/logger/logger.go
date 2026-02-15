@@ -20,6 +20,12 @@ const (
 	uidKey     contextKey = "uid"
 )
 
+// ContextKeyTraceID 导出 context key，供外部包使用相同的 key 类型
+func ContextKeyTraceID() any { return traceIDKey }
+
+// ContextKeyUID 导出 context key，供外部包使用相同的 key 类型
+func ContextKeyUID() any { return uidKey }
+
 // Logger 日志接口
 type Logger interface {
 	// 基础日志方法
@@ -93,10 +99,10 @@ func New(config *Config) (Logger, error) {
 
 	// 创建 zap.Logger
 	opts := []zap.Option{}
-	if config.EnableCaller {
+	if c := config.EnableCaller; c == nil || *c {
 		opts = append(opts, zap.AddCaller(), zap.AddCallerSkip(1))
 	}
-	if config.EnableStacktrace {
+	if s := config.EnableStacktrace; s == nil || *s {
 		opts = append(opts, zap.AddStacktrace(zapcore.ErrorLevel))
 	}
 

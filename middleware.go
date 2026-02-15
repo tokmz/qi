@@ -90,7 +90,10 @@ func Logger(log logger.Logger, cfgs ...*LoggerConfig) HandlerFunc {
 // defaultLogger 创建默认日志中间件（无需配置）
 func defaultLogger() HandlerFunc {
 	// 自动创建默认日志实例
-	log, _ := logger.NewDevelopment()
+	log, err := logger.NewDevelopment()
+	if err != nil {
+		panic("qi: failed to create default logger: " + err.Error())
+	}
 	return Logger(log)
 }
 
@@ -101,7 +104,11 @@ func Recovery(logs ...logger.Logger) HandlerFunc {
 	if len(logs) > 0 && logs[0] != nil {
 		log = logs[0]
 	} else {
-		log, _ = logger.NewDevelopment()
+		var err error
+		log, err = logger.NewDevelopment()
+		if err != nil {
+			panic("qi: failed to create recovery logger: " + err.Error())
+		}
 	}
 
 	return func(c *Context) {

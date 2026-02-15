@@ -90,12 +90,14 @@ func (t *tokenBucket) allow() bool {
 type rateLimiterStore struct {
 	buckets map[string]*tokenBucket
 	mu      sync.RWMutex
+	done    chan struct{}
 }
 
 // newRateLimiterStore 创建限流存储
 func newRateLimiterStore() *rateLimiterStore {
 	return &rateLimiterStore{
 		buckets: make(map[string]*tokenBucket),
+		done:    make(chan struct{}),
 	}
 }
 
@@ -124,27 +126,17 @@ func (s *rateLimiterStore) getBucket(key string, rate float64, burst int) *token
 
 // cleanup 清理过期的令牌桶
 func (s *rateLimiterStore) cleanup(expiry time.Duration) {
-	// 先收集过期 key，避免嵌套锁
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	now := time.Now()
-	expiredKeys := make([]string, 0)
 	for key, bucket := range s.buckets {
 		bucket.mu.Lock()
 		expired := now.Sub(bucket.lastRefill) > expiry
 		bucket.mu.Unlock()
 		if expired {
-			expiredKeys = append(expiredKeys, key)
-		}
-	}
-	s.mu.RUnlock()
-
-	// 统一删除
-	if len(expiredKeys) > 0 {
-		s.mu.Lock()
-		for _, key := range expiredKeys {
 			delete(s.buckets, key)
 		}
-		s.mu.Unlock()
 	}
 }
 
@@ -177,12 +169,17 @@ func RateLimiter(cfgs ...*RateLimiterConfig) qi.HandlerFunc {
 	// 每个中间件实例独立存储
 	limiterStore := newRateLimiterStore()
 
-	// 启动后台清理 goroutine
+	// 启动后台清理 goroutine（可通过 close(done) 停止）
 	go func() {
 		ticker := time.NewTicker(cfg.CleanupInterval)
 		defer ticker.Stop()
-		for range ticker.C {
-			limiterStore.cleanup(cfg.BucketExpiry)
+		for {
+			select {
+			case <-ticker.C:
+				limiterStore.cleanup(cfg.BucketExpiry)
+			case <-limiterStore.done:
+				return
+			}
 		}
 	}()
 

@@ -70,8 +70,12 @@ func (e *Error) As(target any) bool {
 }
 
 // Is 检查错误是否为指定类型
-// target 目标错误类型
+// 当 target 也是 *Error 时，比较 Code 是否相同
 func (e *Error) Is(target error) bool {
+	t, ok := target.(*Error)
+	if ok {
+		return e.Code == t.Code
+	}
 	return errors.Is(e.Err, target)
 }
 

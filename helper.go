@@ -1,6 +1,13 @@
 package qi
 
-import "context"
+import (
+	"context"
+
+	"qi/pkg/logger"
+)
+
+// contextKey 未导出的 context key 类型，避免与其他包冲突
+type contextKey string
 
 const (
 	// ContextTraceIDKey 链路追踪trace_id键（用于 Gin Context）
@@ -10,12 +17,8 @@ const (
 	// ContextLanguageKey 用户语言键（用于 Gin Context）
 	ContextLanguageKey = "language"
 
-	// contextKeyTraceID 链路追踪trace_id键（用于标准库 context.Context）
-	contextKeyTraceID = "qi:trace_id"
-	// contextKeyUid 用户uid键（用于标准库 context.Context）
-	contextKeyUid = "qi:uid"
-	// contextKeyLanguage 用户语言键（用于标准库 context.Context）
-	contextKeyLanguage = "qi:language"
+	// contextKeyLanguage 用户语言键（用于标准库 context.Context，logger 包不需要）
+	contextKeyLanguage contextKey = "language"
 )
 
 // GetContextTraceID 获取上下文链路追踪trace_id
@@ -50,7 +53,7 @@ func SetContextLanguage(ctx *Context, language string) {
 
 // GetTraceIDFromContext 从标准库 context.Context 获取 TraceID
 func GetTraceIDFromContext(ctx context.Context) string {
-	if traceID, ok := ctx.Value(contextKeyTraceID).(string); ok {
+	if traceID, ok := ctx.Value(logger.ContextKeyTraceID()).(string); ok {
 		return traceID
 	}
 	return ""
@@ -58,7 +61,7 @@ func GetTraceIDFromContext(ctx context.Context) string {
 
 // GetUidFromContext 从标准库 context.Context 获取 UID
 func GetUidFromContext(ctx context.Context) int64 {
-	if uid, ok := ctx.Value(contextKeyUid).(int64); ok {
+	if uid, ok := ctx.Value(logger.ContextKeyUID()).(int64); ok {
 		return uid
 	}
 	return 0

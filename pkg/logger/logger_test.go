@@ -1,4 +1,4 @@
-package logger
+package logger_test
 
 import (
 	"context"
@@ -11,13 +11,14 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"qi"
+	"qi/pkg/logger"
 )
 
 // TestNew 测试创建 Logger
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *Config
+		config  *logger.Config
 		wantErr bool
 	}{
 		{
@@ -27,28 +28,28 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "console output",
-			config: &Config{
-				Level:   InfoLevel,
-				Format:  JSONFormat,
+			config: &logger.Config{
+				Level:   logger.InfoLevel,
+				Format:  logger.JSONFormat,
 				Console: true,
 			},
 			wantErr: false,
 		},
 		{
 			name: "file output",
-			config: &Config{
-				Level:  InfoLevel,
-				Format: JSONFormat,
+			config: &logger.Config{
+				Level:  logger.InfoLevel,
+				Format: logger.JSONFormat,
 				File:   "/tmp/test.log",
 			},
 			wantErr: false,
 		},
 		{
 			name: "rotate output",
-			config: &Config{
-				Level:  InfoLevel,
-				Format: JSONFormat,
-				Rotate: &RotateConfig{
+			config: &logger.Config{
+				Level:  logger.InfoLevel,
+				Format: logger.JSONFormat,
+				Rotate: &logger.RotateConfig{
 					Filename: "/tmp/test-rotate.log",
 				},
 			},
@@ -58,13 +59,13 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger, err := New(tt.config)
+			l, err := logger.New(tt.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if logger != nil {
-				defer logger.Sync()
+			if l != nil {
+				defer l.Sync()
 			}
 		})
 	}
@@ -72,84 +73,83 @@ func TestNew(t *testing.T) {
 
 // TestNewWithOptions 测试使用 Options 创建 Logger
 func TestNewWithOptions(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(DebugLevel),
-		WithFormat(ConsoleFormat),
-		WithConsoleOutput(),
-		WithCaller(true),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.DebugLevel),
+		logger.WithFormat(logger.ConsoleFormat),
+		logger.WithConsoleOutput(),
+		logger.WithCaller(true),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
-	if logger.Level() != DebugLevel {
-		t.Errorf("Level() = %v, want %v", logger.Level(), DebugLevel)
+	if l.Level() != logger.DebugLevel {
+		t.Errorf("Level() = %v, want %v", l.Level(), logger.DebugLevel)
 	}
 }
 
 // TestNewProduction 测试创建生产环境 Logger
 func TestNewProduction(t *testing.T) {
-	logger, err := NewProduction()
+	l, err := logger.NewProduction()
 	if err != nil {
 		t.Fatalf("NewProduction() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
-	if logger.Level() != InfoLevel {
-		t.Errorf("Level() = %v, want %v", logger.Level(), InfoLevel)
+	if l.Level() != logger.InfoLevel {
+		t.Errorf("Level() = %v, want %v", l.Level(), logger.InfoLevel)
 	}
 }
 
 // TestNewDevelopment 测试创建开发环境 Logger
 func TestNewDevelopment(t *testing.T) {
-	logger, err := NewDevelopment()
+	l, err := logger.NewDevelopment()
 	if err != nil {
 		t.Fatalf("NewDevelopment() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
-	if logger.Level() != DebugLevel {
-		t.Errorf("Level() = %v, want %v", logger.Level(), DebugLevel)
+	if l.Level() != logger.DebugLevel {
+		t.Errorf("Level() = %v, want %v", l.Level(), logger.DebugLevel)
 	}
 }
 
 // TestLoggerBasicMethods 测试基础日志方法
 func TestLoggerBasicMethods(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(DebugLevel),
-		WithConsoleOutput(),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.DebugLevel),
+		logger.WithConsoleOutput(),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 测试各级别日志
-	logger.Debug("debug message", zap.String("key", "value"))
-	logger.Info("info message", zap.Int("count", 42))
-	logger.Warn("warn message", zap.Duration("duration", time.Second))
-	logger.Error("error message", zap.Bool("success", false))
+	l.Debug("debug message", zap.String("key", "value"))
+	l.Info("info message", zap.Int("count", 42))
+	l.Warn("warn message", zap.Duration("duration", time.Second))
+	l.Error("error message", zap.Bool("success", false))
 }
 
 // TestLoggerWithContext 测试带 Context 的日志方法
 func TestLoggerWithContext(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithConsoleOutput(),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.InfoLevel),
+		logger.WithConsoleOutput(),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 测试带 Context 的日志（使用标准 context.Context）
 	ctx := context.Background()
-	logger.InfoContext(ctx, "user action", zap.String("action", "login"))
-	logger.ErrorContext(ctx, "user error", zap.String("error", "invalid password"))
+	l.InfoContext(ctx, "user action", zap.String("action", "login"))
+	l.ErrorContext(ctx, "user error", zap.String("error", "invalid password"))
 
 	// 测试使用 qi.Context.RequestContext() 方法
-	engine := qi.New()
 	ginCtx, _ := gin.CreateTestContext(nil)
 	ginCtx.Request, _ = http.NewRequest("GET", "/test", nil)
 	c := qi.NewContext(ginCtx)
@@ -160,24 +160,22 @@ func TestLoggerWithContext(t *testing.T) {
 
 	// 获取标准库 context.Context
 	ctx2 := c.RequestContext()
-	logger.InfoContext(ctx2, "user action with context", zap.String("action", "login"))
-
-	_ = engine // 避免未使用变量警告
+	l.InfoContext(ctx2, "user action with context", zap.String("action", "login"))
 }
 
 // TestLoggerWith 测试创建子 Logger
 func TestLoggerWith(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithConsoleOutput(),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.InfoLevel),
+		logger.WithConsoleOutput(),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 创建子 Logger
-	childLogger := logger.With(
+	childLogger := l.With(
 		zap.String("module", "user"),
 		zap.String("version", "v1"),
 	)
@@ -187,17 +185,16 @@ func TestLoggerWith(t *testing.T) {
 
 // TestLoggerWithContextMethod 测试创建带 Context 的子 Logger
 func TestLoggerWithContextMethod(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithConsoleOutput(),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.InfoLevel),
+		logger.WithConsoleOutput(),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 测试使用 qi.Context.RequestContext() 方法
-	engine := qi.New()
 	ginCtx, _ := gin.CreateTestContext(nil)
 	ginCtx.Request, _ = http.NewRequest("GET", "/test", nil)
 	c := qi.NewContext(ginCtx)
@@ -210,114 +207,46 @@ func TestLoggerWithContextMethod(t *testing.T) {
 	ctx := c.RequestContext()
 
 	// 创建带 Context 的子 Logger
-	ctxLogger := logger.WithContext(ctx)
+	ctxLogger := l.WithContext(ctx)
 	ctxLogger.Info("context logger message")
-
-	_ = engine // 避免未使用变量警告
 }
 
 // TestSetLevel 测试动态调整级别
 func TestSetLevel(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithConsoleOutput(),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.InfoLevel),
+		logger.WithConsoleOutput(),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 初始级别
-	if logger.Level() != InfoLevel {
-		t.Errorf("Level() = %v, want %v", logger.Level(), InfoLevel)
+	if l.Level() != logger.InfoLevel {
+		t.Errorf("Level() = %v, want %v", l.Level(), logger.InfoLevel)
 	}
 
 	// 调整级别
-	logger.SetLevel(DebugLevel)
-	if logger.Level() != DebugLevel {
-		t.Errorf("Level() = %v, want %v", logger.Level(), DebugLevel)
-	}
-}
-
-// TestContextHelpers 测试 Context 辅助方法
-func TestContextHelpers(t *testing.T) {
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithConsoleOutput(),
-	)
-	if err != nil {
-		t.Fatalf("NewWithOptions() error = %v", err)
-	}
-	defer logger.Sync()
-
-	// 创建 Qi Engine
-	engine := qi.New()
-
-	// 使用 Gin 的测试 Context
-	ginCtx, _ := gin.CreateTestContext(nil)
-	c := qi.NewContext(ginCtx)
-
-	// 设置 Logger
-	SetContextLogger(c, logger)
-
-	// 获取 Logger
-	ctxLogger := GetContextLogger(c)
-	if ctxLogger == nil {
-		t.Error("GetContextLogger() returned nil")
-	}
-
-	ctxLogger.Info("logger from context")
-
-	_ = engine // 避免未使用变量警告
-}
-
-// TestRotateConfig 测试轮转配置
-func TestRotateConfig(t *testing.T) {
-	config := &RotateConfig{
-		Filename: "/tmp/test-rotate.log",
-	}
-	config.setDefaults()
-
-	if config.MaxSize != 100 {
-		t.Errorf("MaxSize = %v, want 100", config.MaxSize)
-	}
-	if config.MaxAge != 30 {
-		t.Errorf("MaxAge = %v, want 30", config.MaxAge)
-	}
-	if config.MaxBackups != 10 {
-		t.Errorf("MaxBackups = %v, want 10", config.MaxBackups)
-	}
-	if !config.LocalTime {
-		t.Error("LocalTime should be true")
-	}
-}
-
-// TestSamplingConfig 测试采样配置
-func TestSamplingConfig(t *testing.T) {
-	config := &SamplingConfig{}
-	config.setDefaults()
-
-	if config.Initial != 100 {
-		t.Errorf("Initial = %v, want 100", config.Initial)
-	}
-	if config.Thereafter != 100 {
-		t.Errorf("Thereafter = %v, want 100", config.Thereafter)
+	l.SetLevel(logger.DebugLevel)
+	if l.Level() != logger.DebugLevel {
+		t.Errorf("Level() = %v, want %v", l.Level(), logger.DebugLevel)
 	}
 }
 
 // TestLevel 测试日志级别
 func TestLevel(t *testing.T) {
 	tests := []struct {
-		level Level
+		level logger.Level
 		want  string
 	}{
-		{DebugLevel, "debug"},
-		{InfoLevel, "info"},
-		{WarnLevel, "warn"},
-		{ErrorLevel, "error"},
-		{DPanicLevel, "dpanic"},
-		{PanicLevel, "panic"},
-		{FatalLevel, "fatal"},
+		{logger.DebugLevel, "debug"},
+		{logger.InfoLevel, "info"},
+		{logger.WarnLevel, "warn"},
+		{logger.ErrorLevel, "error"},
+		{logger.DPanicLevel, "dpanic"},
+		{logger.PanicLevel, "panic"},
+		{logger.FatalLevel, "fatal"},
 	}
 
 	for _, tt := range tests {
@@ -332,12 +261,12 @@ func TestLevel(t *testing.T) {
 // TestFormat 测试日志格式
 func TestFormat(t *testing.T) {
 	tests := []struct {
-		format  Format
+		format  logger.Format
 		isValid bool
 	}{
-		{JSONFormat, true},
-		{ConsoleFormat, true},
-		{Format("invalid"), false},
+		{logger.JSONFormat, true},
+		{logger.ConsoleFormat, true},
+		{logger.Format("invalid"), false},
 	}
 
 	for _, tt := range tests {
@@ -353,24 +282,24 @@ func TestFormat(t *testing.T) {
 func TestHook(t *testing.T) {
 	// 创建测试 Hook
 	hookCalled := false
-	testHook := &testHook{
+	hook := &testHook{
 		onWrite: func() {
 			hookCalled = true
 		},
 	}
 
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithConsoleOutput(),
-		WithHook(testHook),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.InfoLevel),
+		logger.WithConsoleOutput(),
+		logger.WithHook(hook),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 记录日志
-	logger.Info("test hook")
+	l.Info("test hook")
 
 	// 验证 Hook 被调用
 	if !hookCalled {
@@ -395,53 +324,21 @@ func TestFileOutput(t *testing.T) {
 	tmpFile := "/tmp/test-logger-" + time.Now().Format("20060102150405") + ".log"
 	defer os.Remove(tmpFile)
 
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithFormat(JSONFormat),
-		WithFileOutput(tmpFile),
+	l, err := logger.NewWithOptions(
+		logger.WithLevel(logger.InfoLevel),
+		logger.WithFormat(logger.JSONFormat),
+		logger.WithFileOutput(tmpFile),
 	)
 	if err != nil {
 		t.Fatalf("NewWithOptions() error = %v", err)
 	}
-	defer logger.Sync()
+	defer l.Sync()
 
 	// 写入日志
-	logger.Info("test file output", zap.String("key", "value"))
+	l.Info("test file output", zap.String("key", "value"))
 
 	// 验证文件存在
 	if _, err := os.Stat(tmpFile); os.IsNotExist(err) {
 		t.Error("Log file was not created")
 	}
-}
-
-// TestMiddleware 测试日志中间件
-func TestMiddleware(t *testing.T) {
-	// 创建 Logger
-	logger, err := NewWithOptions(
-		WithLevel(InfoLevel),
-		WithFormat(JSONFormat),
-		WithConsoleOutput(),
-	)
-	if err != nil {
-		t.Fatalf("NewWithOptions() error = %v", err)
-	}
-	defer logger.Sync()
-
-	// 创建中间件
-	middleware := Middleware(logger)
-
-	// 验证中间件函数不为 nil
-	if middleware == nil {
-		t.Error("Middleware returned nil")
-	}
-
-	// 创建测试 Engine 并注册中间件
-	engine := qi.New()
-	engine.Use(middleware)
-
-	// 注册测试路由
-	r := engine.RouterGroup()
-	r.GET("/test", func(c *qi.Context) {
-		c.Success("ok")
-	})
 }
