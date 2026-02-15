@@ -6,10 +6,53 @@ Qi 框架中间件集合。
 
 | 中间件 | 文件 | 说明 |
 |--------|------|------|
+| CORS | cors.go | 跨域资源共享 |
 | I18n | i18n.go | 国际化语言识别 |
 | RateLimiter | ratelimit.go | 令牌桶限流 |
 
 > 日志中间件内置在 qi 核心包中（`qi.Logger()`），`qi.Default()` 默认启用。
+
+## CORS 中间件
+
+跨域资源共享中间件，自动处理 OPTIONS 预检请求，支持通配符源匹配。
+
+### 使用
+
+```go
+import "qi/middleware"
+
+// 允许所有源（开发环境）
+engine.Use(middleware.CORS())
+
+// 指定允许的源
+engine.Use(middleware.CORS(&middleware.CORSConfig{
+    AllowOrigins:     []string{"https://example.com", "https://*.example.com"},
+    AllowCredentials: true,
+}))
+
+// 完整配置
+engine.Use(middleware.CORS(&middleware.CORSConfig{
+    AllowOrigins:     []string{"https://app.example.com"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+    ExposeHeaders:    []string{"X-Total-Count"},
+    AllowCredentials: true,
+    MaxAge:           24 * time.Hour,
+}))
+```
+
+### 配置项
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| AllowOrigins | []string | `["*"]` | 允许的源，支持通配符 |
+| AllowMethods | []string | GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS | 允许的方法 |
+| AllowHeaders | []string | Origin, Content-Type, Accept, Authorization, X-Requested-With | 允许的请求头 |
+| ExposeHeaders | []string | nil | 允许前端访问的响应头 |
+| AllowCredentials | bool | `false` | 是否允许携带凭证 |
+| MaxAge | time.Duration | `12h` | 预检请求缓存时间 |
+
+> 注意：`AllowCredentials` 为 `true` 时，`AllowOrigins` 不能为 `["*"]`，需指定具体源。
 
 ## I18n 中间件
 
@@ -130,6 +173,7 @@ engine.Use(middleware.RateLimiter(&middleware.RateLimiterConfig{
 ```
 middleware/
 ├── README.md       # 本文档
+├── cors.go         # CORS 跨域中间件
 ├── i18n.go         # 国际化中间件
 └── ratelimit.go    # 限流中间件
 ```
