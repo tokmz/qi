@@ -20,7 +20,7 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 ## 安装
 
 ```bash
-go get github.com/tokmz/qi@v1.0.0
+go get github.com/tokmz/qi@latest
 ```
 
 ## 快速开始
