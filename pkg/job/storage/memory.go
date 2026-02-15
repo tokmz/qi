@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"qi/pkg/job"
+	"github.com/tokmz/qi/pkg/job"
 
 	"github.com/google/uuid"
 )

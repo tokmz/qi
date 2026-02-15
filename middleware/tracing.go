@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"qi"
+	"github.com/tokmz/qi"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"qi/utils/strings"
+	"github.com/tokmz/qi/utils/strings"
 	"runtime"
 
 	"github.com/gin-gonic/gin"

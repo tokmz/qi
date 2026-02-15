@@ -3,8 +3,8 @@ package qi
 import (
 	"context"
 	"net/http"
-	"qi/pkg/errors"
-	"qi/pkg/logger"
+	"github.com/tokmz/qi/pkg/errors"
+	"github.com/tokmz/qi/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

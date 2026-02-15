@@ -10,8 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"qi"
-	"qi/pkg/logger"
+	"github.com/tokmz/qi"
+	"github.com/tokmz/qi/pkg/logger"
 )
 
 // TestNew 测试创建 Logger

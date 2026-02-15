@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"qi"
-	"qi/pkg/cache"
+	"github.com/tokmz/qi"
+	"github.com/tokmz/qi/pkg/cache"
 )
 
 // User 用户模型

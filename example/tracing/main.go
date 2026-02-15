@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"qi"
-	"qi/middleware"
-	"qi/pkg/errors"
-	"qi/pkg/logger"
-	"qi/pkg/orm"
-	"qi/pkg/tracing"
+	"github.com/tokmz/qi"
+	"github.com/tokmz/qi/middleware"
+	"github.com/tokmz/qi/pkg/errors"
+	"github.com/tokmz/qi/pkg/logger"
+	"github.com/tokmz/qi/pkg/orm"
+	"github.com/tokmz/qi/pkg/tracing"
 
 	"gorm.io/gorm"
 )

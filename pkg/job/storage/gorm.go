@@ -8,7 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"qi/pkg/job"
+	"github.com/tokmz/qi/pkg/job"
 )
 
 // GormStorage GORM 持久化存储实现

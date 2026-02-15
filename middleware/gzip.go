@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"qi"
+	"github.com/tokmz/qi"
 
 	"github.com/gin-gonic/gin"
 )

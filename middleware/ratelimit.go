@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"qi"
-	"qi/pkg/logger"
+	"github.com/tokmz/qi"
+	"github.com/tokmz/qi/pkg/logger"
 
 	"go.uber.org/zap"
 )
@@ -160,7 +160,7 @@ func RateLimiter(cfgs ...*RateLimiterConfig) qi.HandlerFunc {
 		var err error
 		cfg.Logger, err = logger.NewDevelopment()
 		if err != nil {
-			panic("qi/middleware: failed to create rate limiter logger: " + err.Error())
+			panic("github.com/tokmz/qi/middleware: failed to create rate limiter logger: " + err.Error())
 		}
 	}
 

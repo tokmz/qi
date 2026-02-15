@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"qi"
+	"github.com/tokmz/qi"
 )
 
 // TimeoutConfig 超时中间件配置

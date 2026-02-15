@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ~985 lines of core code
 - Go 1.25+ (requires generics support)
 - Single dependency: Gin v1.11.0
-- Module path: `qi`
+- Module path: `github.com/tokmz/qi`
 
 ## Build & Development Commands
 

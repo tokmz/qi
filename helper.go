@@ -3,7 +3,7 @@ package qi
 import (
 	"context"
 
-	"qi/pkg/logger"
+	"github.com/tokmz/qi/pkg/logger"
 )
 
 // contextKey 未导出的 context key 类型，避免与其他包冲突

@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"qi/pkg/job"
-	"qi/pkg/job/storage"
+	"github.com/tokmz/qi/pkg/job"
+	"github.com/tokmz/qi/pkg/job/storage"
 )
 
 // ExampleHandler 示例任务处理器

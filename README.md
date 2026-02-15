@@ -17,6 +17,12 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 - 🌍 **国际化** - 内置 i18n 支持，JSON 翻译文件、变量替换、复数形式、懒加载
 - 🔧 **丰富中间件** - CORS、限流、Gzip 压缩、超时控制、链路追踪
 
+## 安装
+
+```bash
+go get github.com/tokmz/qi@v1.0.0
+```
+
 ## 快速开始
 
 ### 基础用法
@@ -24,7 +30,7 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 ```go
 package main
 
-import "qi"
+import "github.com/tokmz/qi"
 
 func main() {
     // 创建 Engine（New() 默认包含 Recovery，Default() 额外添加 Logger）

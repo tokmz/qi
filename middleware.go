@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"qi/pkg/logger"
+	"github.com/tokmz/qi/pkg/logger"
 )
 
 // LoggerConfig 日志中间件配置

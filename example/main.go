@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"qi"
-	"qi/pkg/errors"
+	"github.com/tokmz/qi"
+	"github.com/tokmz/qi/pkg/errors"
 )
 
 func main() {

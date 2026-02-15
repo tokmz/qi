@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"qi"
+	"github.com/tokmz/qi"
 )
 
 // CORSConfig CORS 中间件配置
@@ -74,7 +74,7 @@ func CORS(cfgs ...*CORSConfig) qi.HandlerFunc {
 
 	// AllowCredentials 与 AllowOrigins: ["*"] 冲突校验
 	if cfg.AllowCredentials && allowAllOrigins {
-		panic("qi/middleware: CORS AllowCredentials cannot be used with AllowOrigins [\"*\"]")
+		panic("github.com/tokmz/qi/middleware: CORS AllowCredentials cannot be used with AllowOrigins [\"*\"]")
 	}
 
 	// 构建通配符和精确匹配集合

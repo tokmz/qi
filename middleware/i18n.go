@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"fmt"
-	"qi"
-	"qi/pkg/i18n"
+	"github.com/tokmz/qi"
+	"github.com/tokmz/qi/pkg/i18n"
 	"strings"
 )
 

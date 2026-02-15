@@ -1,6 +1,6 @@
 package cache
 
-import "qi/pkg/errors"
+import "github.com/tokmz/qi/pkg/errors"
 
 // 预定义错误
 var (
