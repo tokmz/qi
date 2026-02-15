@@ -219,7 +219,7 @@ func main() {
     }
 
     engine := qi.Default()
-    r := engine.RouterGroup()
+    r := engine.Router()
 
     r.GET("/hello", func(c *qi.Context) {
         msg := trans.T(c.RequestContext(), "hello", "Name", "Alice")

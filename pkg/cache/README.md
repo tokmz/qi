@@ -260,7 +260,7 @@ func main() {
 
     // 创建 Qi Engine
     engine := qi.Default()
-    r := engine.RouterGroup()
+    r := engine.Router()
 
     // 在路由中使用缓存
     r.GET("/user/:id", func(ctx *qi.Context) {

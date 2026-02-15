@@ -12,7 +12,7 @@ import (
 func main() {
 	// 创建 Engine（带默认中间件：Logger + Recovery）
 	engine := qi.Default()
-	r := engine.RouterGroup()
+	r := engine.Router()
 
 	// 注册全局中间件
 	engine.Use(traceMiddleware)

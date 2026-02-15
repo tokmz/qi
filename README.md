@@ -9,12 +9,13 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 - 🔄 **自动绑定** - 根据 Content-Type 和 HTTP 方法自动绑定请求参数
 - 🎯 **泛型路由** - 使用 Go 泛型简化路由处理
 - 🛡️ **错误处理** - 统一的错误码和 HTTP 状态码映射
-- 🔍 **链路追踪** - 内置 TraceID 支持
+- 🔍 **链路追踪** - 内置 TraceID 支持，OpenTelemetry 集成
 - ⚙️ **Options 模式** - 灵活的配置方式
 - 🛑 **优雅关机** - 支持优雅关机和生命周期回调
 - 🔒 **封装设计** - Context 包装器提供清晰的 API 边界
 - 🛠️ **内置 Recovery** - 默认启用 panic 恢复机制，防止服务崩溃
 - 🌍 **国际化** - 内置 i18n 支持，JSON 翻译文件、变量替换、复数形式、懒加载
+- 🔧 **丰富中间件** - CORS、限流、Gzip 压缩、超时控制、链路追踪
 
 ## 快速开始
 
@@ -28,7 +29,7 @@ import "qi"
 func main() {
     // 创建 Engine（New() 默认包含 Recovery，Default() 额外添加 Logger）
     engine := qi.Default()
-    r := engine.RouterGroup()
+    r := engine.Router()
 
     // 基础路由
     r.GET("/ping", func(c *qi.Context) {
@@ -75,7 +76,7 @@ func main() {
         qi.WithTrustedProxies("127.0.0.1"),
     )
 
-    r := engine.RouterGroup()
+    r := engine.Router()
     r.GET("/ping", func(c *qi.Context) {
         c.Success("pong")
     })
@@ -122,7 +123,7 @@ qi.Handle[CreateUserReq, UserResp](r.POST, "/admin/user",
 
 ```go
 engine := qi.Default()
-r := engine.RouterGroup()
+r := engine.Router()
 
 // 定义中间件
 func traceMiddleware(c *qi.Context) {
@@ -469,7 +470,7 @@ if err != nil {
 import "qi/middleware"
 
 engine := qi.Default()
-r := engine.RouterGroup()
+r := engine.Router()
 
 // 使用默认配置（从 Query > Cookie > Accept-Language 识别语言）
 engine.Use(middleware.I18n(trans))
@@ -511,6 +512,51 @@ trans.Tn(ctx, "item_one", "item_other", 5)  // "5 items"
 ### 语言回退
 
 当请求的语言中找不到翻译键时，自动回退到默认语言。如果默认语言也找不到，返回 key 本身。
+
+## 中间件
+
+Qi 提供丰富的内置中间件，分为核心中间件和扩展中间件。
+
+### 核心中间件（qi 包内置）
+
+- **Recovery** - panic 恢复，`qi.New()` 默认启用
+- **Logger** - 请求日志，`qi.Default()` 默认启用
+
+### 扩展中间件（middleware 包）
+
+```go
+import "qi/middleware"
+```
+
+| 中间件 | 说明 |
+|--------|------|
+| `middleware.Tracing()` | OpenTelemetry 链路追踪 |
+| `middleware.CORS()` | 跨域资源共享 |
+| `middleware.RateLimiter()` | 令牌桶限流 |
+| `middleware.Timeout()` | 请求超时控制 |
+| `middleware.Gzip()` | 响应压缩 |
+| `middleware.I18n(translator)` | 国际化语言识别 |
+
+### 推荐注册顺序
+
+```go
+e := qi.Default() // 内置 Recovery + Logger
+
+// 1. 链路追踪（最先，创建根 Span + 生成 TraceID）
+e.Use(middleware.Tracing())
+// 2. CORS（在业务逻辑之前处理跨域预检）
+e.Use(middleware.CORS())
+// 3. 限流（在业务处理之前拦截超限请求）
+e.Use(middleware.RateLimiter())
+// 4. 超时控制
+e.Use(middleware.Timeout())
+// 5. Gzip 压缩
+e.Use(middleware.Gzip())
+// 6. I18n（业务相关）
+e.Use(middleware.I18n(translator))
+```
+
+详细配置请参考 [middleware/README.md](middleware/README.md)。
 
 ## 注意事项
 
@@ -557,7 +603,7 @@ c := &qi.Context{ctx: ginCtx}  // ctx 是私有字段，无法访问
 
 ### Recovery 中间件
 
-`qi.New()` 默认包含 `gin.Recovery()` 中间件，防止 panic 导致服务崩溃。`qi.Default()` 在此基础上额外添加了 `gin.Logger()` 中间件：
+`qi.New()` 默认包含 Recovery 中间件（使用 qi 统一响应格式），防止 panic 导致服务崩溃。`qi.Default()` 在此基础上额外添加了 Logger 中间件：
 
 ```go
 // New() - 仅包含 Recovery
@@ -588,10 +634,10 @@ func Default(opts ...Option) *Engine
 func (e *Engine) Use(middlewares ...HandlerFunc)
 
 // Group 创建路由组
-func (e *Engine) Group(path string) *RouterGroup
+func (e *Engine) Group(path string, middlewares ...HandlerFunc) *RouterGroup
 
-// RouterGroup 返回根路由组
-func (e *Engine) RouterGroup() *RouterGroup
+// Router 返回根路由组
+func (e *Engine) Router() *RouterGroup
 
 // Run 启动 HTTP 服务器（支持优雅关机）
 func (e *Engine) Run(addr ...string) error

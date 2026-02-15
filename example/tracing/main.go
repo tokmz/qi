@@ -110,7 +110,7 @@ func main() {
 	}))
 
 	// 6. 注册路由
-	r := engine.RouterGroup()
+	r := engine.Router()
 
 	// 健康检查（不追踪）
 	r.GET("/health", func(c *qi.Context) {

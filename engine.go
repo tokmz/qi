@@ -86,8 +86,8 @@ func (e *Engine) Group(path string, middlewares ...HandlerFunc) *RouterGroup {
 	}
 }
 
-// RouterGroup 返回根路由组
-func (e *Engine) RouterGroup() *RouterGroup {
+// Router 返回根路由组
+func (e *Engine) Router() *RouterGroup {
 	return &RouterGroup{
 		group: &e.engine.RouterGroup,
 	}
