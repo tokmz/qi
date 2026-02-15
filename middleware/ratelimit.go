@@ -157,7 +157,11 @@ func RateLimiter(cfgs ...*RateLimiterConfig) qi.HandlerFunc {
 
 	// 默认日志
 	if cfg.Logger == nil {
-		cfg.Logger, _ = logger.NewDevelopment()
+		var err error
+		cfg.Logger, err = logger.NewDevelopment()
+		if err != nil {
+			panic("qi/middleware: failed to create rate limiter logger: " + err.Error())
+		}
 	}
 
 	// 构建跳过路径 map
