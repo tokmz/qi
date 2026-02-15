@@ -153,7 +153,6 @@ func Gzip(cfgs ...*GzipConfig) qi.HandlerFunc {
 
 		// 从池中获取 gzip.Writer
 		gz := pool.Get().(*gzip.Writer)
-		defer pool.Put(gz)
 
 		// 获取底层 gin.ResponseWriter 并包装
 		ginWriter := c.Writer()
@@ -173,9 +172,11 @@ func Gzip(cfgs ...*GzipConfig) qi.HandlerFunc {
 		// 刷出剩余缓冲区
 		gw.flush()
 
-		// 关闭 gzip writer
+		// 关闭 gzip writer 并归还池
 		if gw.useGzip {
 			_ = gz.Close()
 		}
+		gz.Reset(io.Discard)
+		pool.Put(gz)
 	}
 }

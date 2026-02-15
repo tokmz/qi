@@ -32,7 +32,8 @@ func defaultTimeoutConfig() *TimeoutConfig {
 }
 
 // Timeout 创建超时中间件
-// 通过 context.WithTimeout 控制请求超时，超时后返回 408
+// 通过 context.WithTimeout 注入超时 context，handler 应通过 ctx.Done() 感知超时
+// 超时后在当前 goroutine 中检查并返回 408
 func Timeout(cfgs ...*TimeoutConfig) qi.HandlerFunc {
 	cfg := defaultTimeoutConfig()
 	if len(cfgs) > 0 && cfgs[0] != nil {
@@ -56,23 +57,17 @@ func Timeout(cfgs ...*TimeoutConfig) qi.HandlerFunc {
 			return
 		}
 
+		// 注入带超时的 context，handler 可通过 ctx.Done() 感知超时
 		ctx, cancel := context.WithTimeout(c.Request().Context(), cfg.Timeout)
 		defer cancel()
 
 		c.SetRequestContext(ctx)
 
-		// 用 channel 等待处理完成
-		done := make(chan struct{}, 1)
-		go func() {
-			c.Next()
-			done <- struct{}{}
-		}()
+		// 在当前 goroutine 中执行，避免并发安全问题
+		c.Next()
 
-		select {
-		case <-done:
-			// 正常完成
-		case <-ctx.Done():
-			// 超时
+		// handler 完成后检查是否已超时
+		if ctx.Err() == context.DeadlineExceeded {
 			c.Fail(http.StatusRequestTimeout, cfg.TimeoutMessage)
 			c.Abort()
 		}
