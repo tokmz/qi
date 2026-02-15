@@ -1,10 +1,9 @@
-package middleware
+package qi
 
 import (
 	"time"
 
 	"go.uber.org/zap"
-	"qi"
 	"qi/pkg/logger"
 )
 
@@ -14,32 +13,24 @@ type LoggerConfig struct {
 	Logger logger.Logger
 
 	// SkipFunc 跳过日志的函数
-	SkipFunc func(c *qi.Context) bool
-
-	// IncludeRequestBody 是否记录请求体（默认 false）
-	IncludeRequestBody bool
-
-	// IncludeResponseBody 是否记录响应体（默认 false）
-	IncludeResponseBody bool
+	SkipFunc func(c *Context) bool
 
 	// ExcludePaths 排除的路径（不记录日志）
 	ExcludePaths []string
 }
 
-// DefaultLoggerConfig 返回默认配置
-func DefaultLoggerConfig(log logger.Logger) *LoggerConfig {
+// defaultLoggerConfig 返回默认配置
+func defaultLoggerConfig(log logger.Logger) *LoggerConfig {
 	return &LoggerConfig{
-		Logger:             log,
-		IncludeRequestBody: false,
-		IncludeResponseBody: false,
-		ExcludePaths:       nil,
+		Logger:       log,
+		ExcludePaths: nil,
 	}
 }
 
 // Logger 创建日志中间件
 // 记录请求方法、路径、客户端 IP、状态码、耗时等信息
-func Logger(log logger.Logger, cfgs ...*LoggerConfig) qi.HandlerFunc {
-	cfg := DefaultLoggerConfig(log)
+func Logger(log logger.Logger, cfgs ...*LoggerConfig) HandlerFunc {
+	cfg := defaultLoggerConfig(log)
 	if len(cfgs) > 0 && cfgs[0] != nil {
 		cfg = cfgs[0]
 	}
@@ -50,7 +41,7 @@ func Logger(log logger.Logger, cfgs ...*LoggerConfig) qi.HandlerFunc {
 		skipMap[path] = true
 	}
 
-	return func(c *qi.Context) {
+	return func(c *Context) {
 		// 检查是否跳过
 		if cfg.SkipFunc != nil && cfg.SkipFunc(c) {
 			c.Next()
@@ -111,11 +102,9 @@ func Logger(log logger.Logger, cfgs ...*LoggerConfig) qi.HandlerFunc {
 	}
 }
 
-// defaultLogger 默认日志中间件
-// 使用 logger 包，自动创建默认配置（输出到终端）
-func defaultLogger() qi.HandlerFunc {
+// defaultLogger 创建默认日志中间件（无需配置）
+func defaultLogger() HandlerFunc {
 	// 自动创建默认日志实例
 	log, _ := logger.NewDevelopment()
-
 	return Logger(log)
 }

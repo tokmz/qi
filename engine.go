@@ -68,8 +68,8 @@ func Default(opts ...Option) *Engine {
 	// 创建基础 Engine（已包含 Recovery 中间件）
 	e := New(opts...)
 
-	// 添加 Logger 中间件
-	e.engine.Use(gin.Logger())
+	// 添加 Logger 中间件（使用默认配置）
+	e.Use(defaultLogger())
 
 	return e
 }

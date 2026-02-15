@@ -62,7 +62,7 @@ func I18n(translator i18n.Translator, cfgs ...*I18nConfig) qi.HandlerFunc {
 
 		// 可选：写入 Cookie
 		if cfg.SetCookie && c.Query(cfg.QueryKey) != "" {
-			c.Header("Set-Cookie", fmt.Sprintf("%s=%s; Path=/; Max-Age=%d; HttpOnly", cfg.CookieKey, lang, cfg.CookieMaxAge))
+			c.Header("Set-Cookie", fmt.Sprintf("%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax", cfg.CookieKey, lang, cfg.CookieMaxAge))
 		}
 
 		c.Next()

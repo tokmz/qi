@@ -6,11 +6,18 @@ import (
 	"os"
 	"sync/atomic"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"qi"
-	"go.opentelemetry.io/otel/trace"
+)
+
+// ContextKey 日志上下文键
+type contextKey string
+
+const (
+	traceIDKey contextKey = "trace_id"
+	uidKey     contextKey = "uid"
 )
 
 // Logger 日志接口
@@ -266,7 +273,7 @@ func (l *logger) contextFields(ctx context.Context, fields []zap.Field) []zap.Fi
 	contextFields := make([]zap.Field, 0, len(fields)+3)
 
 	// 从 context.Context 提取 TraceID
-	if traceID := qi.GetTraceIDFromContext(ctx); traceID != "" {
+	if traceID, ok := ctx.Value(traceIDKey).(string); ok && traceID != "" {
 		contextFields = append(contextFields, zap.String("trace_id", traceID))
 	}
 
@@ -276,7 +283,7 @@ func (l *logger) contextFields(ctx context.Context, fields []zap.Field) []zap.Fi
 	}
 
 	// 从 context.Context 提取 UID
-	if uid := qi.GetUidFromContext(ctx); uid != 0 {
+	if uid, ok := ctx.Value(uidKey).(int64); ok && uid != 0 {
 		contextFields = append(contextFields, zap.Int64("uid", uid))
 	}
 
@@ -300,12 +307,12 @@ func (l *logger) WithContext(ctx context.Context) Logger {
 	fields := make([]zap.Field, 0, 2)
 
 	// 从 context.Context 提取 TraceID
-	if traceID := qi.GetTraceIDFromContext(ctx); traceID != "" {
+	if traceID, ok := ctx.Value(traceIDKey).(string); ok && traceID != "" {
 		fields = append(fields, zap.String("trace_id", traceID))
 	}
 
 	// 从 context.Context 提取 UID
-	if uid := qi.GetUidFromContext(ctx); uid != 0 {
+	if uid, ok := ctx.Value(uidKey).(int64); ok && uid != 0 {
 		fields = append(fields, zap.Int64("uid", uid))
 	}
 
