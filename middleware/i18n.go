@@ -2,9 +2,10 @@ package middleware
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/tokmz/qi"
 	"github.com/tokmz/qi/pkg/i18n"
-	"strings"
 )
 
 // I18nConfig 中间件配置

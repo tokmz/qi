@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"github.com/tokmz/qi/utils/strings"
 	"runtime"
+
+	"github.com/tokmz/qi/utils/strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Version 框架版本号
-const Version = "1.0.0"
+const Version = "1.0.1"
 
 // banner ASCII Art
 const banner = `

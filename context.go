@@ -3,6 +3,7 @@ package qi
 import (
 	"context"
 	"net/http"
+
 	"github.com/tokmz/qi/pkg/errors"
 	"github.com/tokmz/qi/pkg/logger"
 
