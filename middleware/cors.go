@@ -72,6 +72,11 @@ func CORS(cfgs ...*CORSConfig) qi.HandlerFunc {
 	exposeHeaders := strings.Join(cfg.ExposeHeaders, ", ")
 	maxAge := strconv.Itoa(int(cfg.MaxAge.Seconds()))
 
+	// AllowCredentials 与 AllowOrigins: ["*"] 冲突校验
+	if cfg.AllowCredentials && allowAllOrigins {
+		panic("qi/middleware: CORS AllowCredentials cannot be used with AllowOrigins [\"*\"]")
+	}
+
 	// 构建通配符和精确匹配集合
 	var wildcardOrigins []string
 	exactOrigins := make(map[string]bool)
@@ -108,11 +113,11 @@ func CORS(cfgs ...*CORSConfig) qi.HandlerFunc {
 		}
 
 		// 设置 CORS 响应头
-		if allowAllOrigins && !cfg.AllowCredentials {
+		if allowAllOrigins {
 			c.Header("Access-Control-Allow-Origin", "*")
 		} else {
 			c.Header("Access-Control-Allow-Origin", origin)
-			c.Header("Vary", "Origin")
+			c.Header("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 		}
 
 		if cfg.AllowCredentials {
@@ -172,5 +177,5 @@ func matchWildcard(origin, pattern string) bool {
 		return false
 	}
 	// 确保中间部分不为空
-	return len(origin) >= len(prefix)+len(suffix)
+	return len(origin) > len(prefix)+len(suffix)
 }

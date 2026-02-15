@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"qi"
+	"qi/middleware"
 	"qi/pkg/errors"
 	"qi/pkg/logger"
 	"qi/pkg/orm"
@@ -101,12 +102,12 @@ func main() {
 	engine := qi.New()
 
 	// 5. 注册全局中间件
-	engine.Use(tracing.Middleware(
-		tracing.WithFilter(func(c *qi.Context) bool {
+	engine.Use(middleware.Tracing(&middleware.TracingConfig{
+		Filter: func(c *qi.Context) bool {
 			// 过滤健康检查
 			return c.Request().URL.Path != "/health"
-		}),
-	))
+		},
+	}))
 
 	// 6. 注册路由
 	r := engine.RouterGroup()

@@ -6,11 +6,92 @@ Qi 框架中间件集合。
 
 | 中间件 | 文件 | 说明 |
 |--------|------|------|
+| Tracing | tracing.go | OpenTelemetry 链路追踪 |
 | CORS | cors.go | 跨域资源共享 |
-| I18n | i18n.go | 国际化语言识别 |
 | RateLimiter | ratelimit.go | 令牌桶限流 |
+| I18n | i18n.go | 国际化语言识别 |
 
-> 日志中间件内置在 qi 核心包中（`qi.Logger()`），`qi.Default()` 默认启用。
+> Logger 和 Recovery 内置在 qi 核心包中，`qi.New()` 默认启用 Recovery，`qi.Default()` 额外启用 Logger。
+
+## 推荐注册顺序
+
+```go
+e := qi.Default() // 内置 Recovery + Logger
+
+// 1. 链路追踪（最先，创建根 Span + 生成 TraceID）
+e.Use(middleware.Tracing())
+// 2. CORS（在业务逻辑之前处理跨域预检）
+e.Use(middleware.CORS())
+// 3. 限流（在业务处理之前拦截超限请求）
+e.Use(middleware.RateLimiter())
+// 4. I18n（业务相关）
+e.Use(middleware.I18n(translator))
+```
+
+Tracing 应放在最前面，因为：
+- 创建根 Span，后续所有中间件和业务处理都在 Span 时间范围内
+- 设置 TraceID 到 `qi.Context`，Logger 中间件需要用到
+- 注入带 Span 的 context，后续中间件可创建子 Span
+
+## Tracing 链路追踪中间件
+
+基于 OpenTelemetry 的链路追踪中间件，自动提取/注入 TraceContext，创建 HTTP Server Span。OTel 自动生成 TraceID 和 SpanID。
+
+### 使用
+
+```go
+import "qi/middleware"
+
+// 默认配置
+engine.Use(middleware.Tracing())
+
+// 自定义配置
+engine.Use(middleware.Tracing(&middleware.TracingConfig{
+    TracerName: "my-service",
+    ExcludePaths: []string{"/health", "/ping"},
+}))
+
+// 自定义 Span 名称
+engine.Use(middleware.Tracing(&middleware.TracingConfig{
+    SpanNameFormatter: func(c *qi.Context) string {
+        return fmt.Sprintf("HTTP %s %s", c.Request().Method, c.FullPath())
+    },
+}))
+
+// 过滤不需要追踪的请求
+engine.Use(middleware.Tracing(&middleware.TracingConfig{
+    Filter: func(c *qi.Context) bool {
+        return !strings.HasPrefix(c.Request().URL.Path, "/internal")
+    },
+}))
+```
+
+### 配置项
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| TracerName | string | `qi.http` | Tracer 名称 |
+| SpanNameFormatter | func | `METHOD PATH` | 自定义 Span 名称格式 |
+| Filter | func | nil | 过滤函数，返回 true 追踪 |
+| ExcludePaths | []string | nil | 排除的路径 |
+
+### Span 属性
+
+自动记录以下属性：
+- `http.request.method` - 请求方法
+- `http.route` - 路由模板
+- `url.path` - 请求路径
+- `server.address` - 服务地址
+- `user_agent.original` - User-Agent
+- `http.client_ip` - 客户端 IP
+- `http.response.status_code` - 响应状态码
+
+### 注意事项
+
+- 需要先初始化 OTel Provider（`TracerProvider` + `TextMapPropagator`）
+- 每次请求时获取 tracer，避免 Provider 后初始化导致使用 noop
+- TraceID 自动同步到 `qi.Context`，可通过 `qi.GetContextTraceID(c)` 获取
+- 状态码 >= 500 时 Span 标记为 Error
 
 ## CORS 中间件
 
@@ -173,6 +254,7 @@ engine.Use(middleware.RateLimiter(&middleware.RateLimiterConfig{
 ```
 middleware/
 ├── README.md       # 本文档
+├── tracing.go      # OpenTelemetry 链路追踪中间件
 ├── cors.go         # CORS 跨域中间件
 ├── i18n.go         # 国际化中间件
 └── ratelimit.go    # 限流中间件

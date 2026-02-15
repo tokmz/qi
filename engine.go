@@ -40,8 +40,8 @@ func New(opts ...Option) *Engine {
 	// 创建 Gin Engine
 	ginEngine := gin.New()
 
-	// 添加默认 Recovery 中间件（防止 panic 导致服务崩溃）
-	ginEngine.Use(gin.Recovery())
+	// 添加默认 Recovery 中间件（使用 qi 统一响应格式）
+	ginEngine.Use(wrap(Recovery()))
 
 	// 设置信任的代理
 	if config.TrustedProxies != nil {

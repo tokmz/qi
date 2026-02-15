@@ -124,16 +124,27 @@ func (s *rateLimiterStore) getBucket(key string, rate float64, burst int) *token
 
 // cleanup 清理过期的令牌桶
 func (s *rateLimiterStore) cleanup(expiry time.Duration) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// 先收集过期 key，避免嵌套锁
+	s.mu.RLock()
 	now := time.Now()
+	expiredKeys := make([]string, 0)
 	for key, bucket := range s.buckets {
 		bucket.mu.Lock()
-		if now.Sub(bucket.lastRefill) > expiry {
+		expired := now.Sub(bucket.lastRefill) > expiry
+		bucket.mu.Unlock()
+		if expired {
+			expiredKeys = append(expiredKeys, key)
+		}
+	}
+	s.mu.RUnlock()
+
+	// 统一删除
+	if len(expiredKeys) > 0 {
+		s.mu.Lock()
+		for _, key := range expiredKeys {
 			delete(s.buckets, key)
 		}
-		bucket.mu.Unlock()
+		s.mu.Unlock()
 	}
 }
 

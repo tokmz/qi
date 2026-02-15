@@ -60,8 +60,8 @@ func I18n(translator i18n.Translator, cfgs ...*I18nConfig) qi.HandlerFunc {
 		ctx := i18n.WithLanguage(c.RequestContext(), lang)
 		c.SetRequestContext(ctx)
 
-		// 可选：写入 Cookie
-		if cfg.SetCookie && c.Query(cfg.QueryKey) != "" {
+		// 可选：写入 Cookie（仅当 lang 值合法时）
+		if cfg.SetCookie && c.Query(cfg.QueryKey) != "" && isValidLang(lang) {
 			c.Header("Set-Cookie", fmt.Sprintf("%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax", cfg.CookieKey, lang, cfg.CookieMaxAge))
 		}
 
@@ -125,4 +125,14 @@ func parseCookieValue(cookie, key string) string {
 		}
 	}
 	return ""
+}
+
+// isValidLang 校验语言标签是否合法（防止 Cookie 注入）
+func isValidLang(lang string) bool {
+	for _, c := range lang {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return len(lang) > 0
 }
