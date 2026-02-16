@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tokmz/qi/pkg/i18n"
 )
 
 // ServerConfig 服务器配置
@@ -52,6 +53,9 @@ type Config struct {
 
 	// MaxMultipartMemory 最大 multipart 内存（字节）
 	MaxMultipartMemory int64
+
+	// I18n 国际化配置，nil 表示不启用
+	I18n *i18n.Config
 }
 
 // Option 配置选项函数
@@ -152,5 +156,12 @@ func WithTrustedProxies(proxies ...string) Option {
 func WithMaxMultipartMemory(size int64) Option {
 	return func(c *Config) {
 		c.MaxMultipartMemory = size
+	}
+}
+
+// WithI18n 设置国际化配置
+func WithI18n(cfg *i18n.Config) Option {
+	return func(c *Config) {
+		c.I18n = cfg
 	}
 }

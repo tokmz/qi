@@ -8,13 +8,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/tokmz/qi/pkg/i18n"
+
 	"github.com/gin-gonic/gin"
 )
 
 type Engine struct {
-	config *Config
-	engine *gin.Engine
-	server *http.Server
+	config     *Config
+	engine     *gin.Engine
+	server     *http.Server
+	translator i18n.Translator
 }
 
 // New 创建一个新的 Engine 实例，使用 Options 模式配置
@@ -57,6 +60,16 @@ func New(opts ...Option) *Engine {
 		config: config,
 	}
 
+	// 初始化 i18n
+	if config.I18n != nil {
+		t, err := i18n.New(config.I18n)
+		if err != nil {
+			log.Fatalf("qi: failed to init i18n: %v", err)
+		}
+		e.translator = t
+		e.engine.Use(wrap(i18nMiddleware(t)))
+	}
+
 	return e
 }
 
@@ -91,6 +104,11 @@ func (e *Engine) Router() *RouterGroup {
 	return &RouterGroup{
 		group: &e.engine.RouterGroup,
 	}
+}
+
+// Translator 返回 i18n 翻译器实例
+func (e *Engine) Translator() i18n.Translator {
+	return e.translator
 }
 
 // Run 启动 HTTP 服务器，支持优雅关机
