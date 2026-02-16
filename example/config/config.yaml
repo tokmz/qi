@@ -1,0 +1,36 @@
+# Qi 框架配置示例
+app:
+  name: qi-demo
+  version: 1.0.0
+  debug: true
+
+server:
+  addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 10s
+
+database:
+  host: localhost
+  port: 3306
+  name: qi_db
+  user: root
+  password: ""
+  max_open_conns: 100
+  max_idle_conns: 10
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+log:
+  level: info
+  format: json
+  output:
+    - stdout
+    - file
+
+features:
+  - auth
+  - cache
+  - rate_limit
