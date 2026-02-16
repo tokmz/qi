@@ -198,6 +198,7 @@ qi.WithAfterShutdown(func() {})           // 关机后回调
 // 其他配置
 qi.WithTrustedProxies("127.0.0.1")        // 信任的代理
 qi.WithMaxMultipartMemory(32 << 20)       // Multipart 内存（32MB）
+qi.WithI18n(&i18n.Config{...})            // 国际化配置（nil 不启用）
 ```
 
 ### 默认配置
@@ -434,7 +435,7 @@ if err := engine.RunTLS(":443", "cert.pem", "key.pem"); err != nil {
 
 ## 国际化 (i18n)
 
-Qi 内置国际化支持，通过 `pkg/i18n` 包和 `middleware/i18n` 中间件实现。
+Qi 内置国际化支持，通过 `WithI18n` 配置即可启用。框架自动初始化翻译器并注册语言检测中间件，Context 上直接调用 `T()`/`Tn()`。
 
 ### 创建翻译文件
 
@@ -455,54 +456,36 @@ locales/
 }
 ```
 
-### 创建翻译器
+### 启用 i18n
 
 ```go
-import "qi/pkg/i18n"
+import "github.com/tokmz/qi/pkg/i18n"
 
-trans, err := i18n.NewWithOptions(
-    i18n.WithDir("./locales"),
-    i18n.WithDefaultLanguage("zh-CN"),
-    i18n.WithLanguages("zh-CN", "en-US"),
+engine := qi.New(
+    qi.WithI18n(&i18n.Config{
+        Dir:             "./locales",
+        DefaultLanguage: "zh-CN",
+        Languages:       []string{"zh-CN", "en-US"},
+    }),
 )
-if err != nil {
-    panic(err)
-}
 ```
 
-### 使用 i18n 中间件
-
-```go
-import "qi/middleware"
-
-engine := qi.Default()
-r := engine.Router()
-
-// 使用默认配置（从 Query > Cookie > Accept-Language 识别语言）
-engine.Use(middleware.I18n(trans))
-
-// 自定义配置
-engine.Use(middleware.I18n(trans, &middleware.I18nConfig{
-    QueryKey:     "lang",
-    CookieKey:    "language",
-    HeaderKey:    "Accept-Language",
-    SetCookie:    true,
-    CookieMaxAge: 86400 * 30,
-}))
-```
+框架会自动：
+1. 初始化翻译器
+2. 注册语言检测中间件（优先级：`Query(lang)` > `X-Language` Header > `Accept-Language` Header > 默认语言）
 
 ### 在路由中使用翻译
 
 ```go
 r.GET("/hello", func(c *qi.Context) {
-    msg := trans.T(c.RequestContext(), "hello", "Name", "Alice")
+    msg := c.T("hello", "Name", "Alice")
     c.Success(msg)
 })
 
 // 泛型路由
 qi.Handle[HelloReq, HelloResp](r.POST, "/hello",
     func(c *qi.Context, req *HelloReq) (*HelloResp, error) {
-        msg := trans.T(c.RequestContext(), "hello", "Name", req.Name)
+        msg := c.T("hello", "Name", req.Name)
         return &HelloResp{Message: msg}, nil
     })
 ```
@@ -511,8 +494,18 @@ qi.Handle[HelloReq, HelloResp](r.POST, "/hello",
 
 ```go
 // 翻译文件: {"item_one": "{{.Count}} item", "item_other": "{{.Count}} items"}
-trans.Tn(ctx, "item_one", "item_other", 1)  // "1 item"
-trans.Tn(ctx, "item_one", "item_other", 5)  // "5 items"
+c.Tn("item_one", "item_other", 1)  // "1 item"
+c.Tn("item_one", "item_other", 5)  // "5 items"
+```
+
+### 获取翻译器实例
+
+如需直接操作翻译器（如预加载、检查 key 是否存在），可通过 `engine.Translator()` 获取：
+
+```go
+t := engine.Translator()
+t.Preload("ja-JP")
+t.HasKey("hello")
 ```
 
 ### 语言回退
@@ -541,7 +534,8 @@ import "qi/middleware"
 | `middleware.RateLimiter()` | 令牌桶限流 |
 | `middleware.Timeout()` | 请求超时控制 |
 | `middleware.Gzip()` | 响应压缩 |
-| `middleware.I18n(translator)` | 国际化语言识别 |
+
+> **注意：** i18n 中间件已内置到框架中，通过 `qi.WithI18n()` 配置即可自动注册，无需手动添加。
 
 ### 推荐注册顺序
 
@@ -558,8 +552,7 @@ e.Use(middleware.RateLimiter())
 e.Use(middleware.Timeout())
 // 5. Gzip 压缩
 e.Use(middleware.Gzip())
-// 6. I18n（业务相关）
-e.Use(middleware.I18n(translator))
+// i18n 中间件通过 WithI18n 配置自动注册，无需手动添加
 ```
 
 详细配置请参考 [middleware/README.md](middleware/README.md)。
@@ -644,6 +637,9 @@ func (e *Engine) Group(path string, middlewares ...HandlerFunc) *RouterGroup
 
 // Router 返回根路由组
 func (e *Engine) Router() *RouterGroup
+
+// Translator 返回 i18n 翻译器实例（未启用 i18n 时返回 nil）
+func (e *Engine) Translator() i18n.Translator
 
 // Run 启动 HTTP 服务器（支持优雅关机）
 func (e *Engine) Run(addr ...string) error
@@ -848,6 +844,16 @@ func (c *Context) Page(list any, total uint64)
 func (c *Context) JSON(code int, obj any)
 ```
 
+#### 国际化方法
+
+```go
+// T 获取翻译（支持变量替换），未启用 i18n 时返回 key
+func (c *Context) T(key string, args ...any) string
+
+// Tn 获取翻译（支持复数形式），未启用 i18n 时返回 key
+func (c *Context) Tn(key, plural string, n int, args ...any) string
+```
+
 #### 响应头设置
 
 ```go
@@ -951,6 +957,9 @@ func WithTrustedProxies(proxies ...string) Option
 
 // WithMaxMultipartMemory 设置最大 multipart 内存
 func WithMaxMultipartMemory(size int64) Option
+
+// WithI18n 设置国际化配置
+func WithI18n(cfg *i18n.Config) Option
 ```
 
 ### 响应结构 API
