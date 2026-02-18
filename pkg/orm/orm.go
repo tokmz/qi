@@ -75,7 +75,7 @@ func getDialector(dbType DBType, dsn string) (gorm.Dialector, error) {
 	switch dbType {
 	case MySQL:
 		return mysql.Open(dsn), nil
-	case PostgreSQL:
+	case PostgresSQL:
 		return postgres.Open(dsn), nil
 	case SQLite:
 		return sqlite.Open(dsn), nil
@@ -156,4 +156,3 @@ func getLoadBalancePolicy(policy string) dbresolver.Policy {
 		return dbresolver.RandomPolicy{} // 默认随机策略
 	}
 }
-

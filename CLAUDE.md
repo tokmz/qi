@@ -34,7 +34,7 @@ go fmt ./...
 go mod tidy
 ```
 
-**Note:** No test files exist yet. No Makefile present - use standard Go toolchain.
+**Note:** Test files exist for core i18n integration (`i18n_test.go`) and `pkg/i18n/` package. No Makefile present - use standard Go toolchain.
 
 ## Architecture Overview
 
@@ -63,13 +63,15 @@ Response (unified JSON format with TraceID)
 - Manages lifecycle with graceful shutdown
 - Monitors SIGINT/SIGTERM signals automatically
 - Configuration via Options pattern
+- Stores `i18n.Translator` when i18n is enabled via `WithI18n()`
 
-**Context** (`context.go`)
+**Context** (`context.go`, `i18n.go`)
 - Wraps `gin.Context` to provide enhanced API
 - **Critical:** All `Bind*()` methods automatically respond with 400 errors on failure
 - Developers only need to check `err != nil` and `return` - no manual error response needed
 - Unified response methods: `Success()`, `Fail()`, `RespondError()`, `Page()`
 - Automatic TraceID injection into all responses
+- `T()`/`Tn()` convenience methods for i18n translation (defined in `i18n.go`)
 
 **Router** (`router.go`)
 - Wraps `gin.RouterGroup`
@@ -181,6 +183,13 @@ type Error struct {
    - Automatically added to all responses
    - No manual tracking needed
 
+7. **Built-in i18n Integration**
+   - Enabled via `WithI18n()` option — nil means disabled
+   - Engine auto-initializes translator and registers language detection middleware
+   - Language detection priority: `Query(lang)` > `X-Language` header > `Accept-Language` header > default
+   - `Context.T()`/`Tn()` for direct translation in handlers
+   - Falls back to returning key when i18n is not enabled
+
 ## Common Patterns
 
 ### Basic Route
@@ -235,6 +244,27 @@ return nil, errors.ErrBadRequest.WithMessage("用户名不能为空")
 return nil, errors.New(2001, 403, "禁止访问", nil)
 ```
 
+### i18n Translation
+```go
+// Enable i18n via config
+engine := qi.New(
+    qi.WithI18n(&i18n.Config{
+        Dir:             "./locales",
+        DefaultLanguage: "zh-CN",
+        Languages:       []string{"zh-CN", "en-US"},
+    }),
+)
+
+// Use in handler — language auto-detected from request
+r.GET("/hello", func(c *qi.Context) {
+    msg := c.T("hello", "Name", "World")
+    c.Success(msg)
+})
+
+// Plural form
+msg := c.Tn("item_one", "item_other", count)
+```
+
 ## Important Notes
 
 ### Gin Mode is Global State
@@ -282,6 +312,11 @@ qi.New(
     qi.WithAfterShutdown(func() { /* finalize */ }),
     qi.WithTrustedProxies("127.0.0.1"),
     qi.WithMaxMultipartMemory(32 << 20),
+    qi.WithI18n(&i18n.Config{
+        Dir:             "./locales",
+        DefaultLanguage: "zh-CN",
+        Languages:       []string{"zh-CN", "en-US"},
+    }),
 )
 ```
 
@@ -295,6 +330,7 @@ qi.New(
 6. **TraceID is automatic** - Set in middleware, auto-injected in responses
 7. **Options pattern for config** - `qi.New(qi.WithAddr(":8080"), ...)`
 8. **Graceful shutdown built-in** - Just call `engine.Run()`
+9. **i18n via WithI18n()** - `c.T("key")` / `c.Tn("one", "other", n)` in handlers
 
 ## Project Structure
 
@@ -309,11 +345,20 @@ qi.New(
 ├── config.go              # Configuration + options
 ├── wrapper.go             # Gin wrapper functions
 ├── helper.go              # Context helper functions
+├── i18n.go                # i18n middleware + Context.T()/Tn() methods
+├── i18n_test.go           # i18n integration tests
 ├── pkg/
-│   └── errors/            # Error handling package
-│       ├── errors.go      # Error type + utilities
-│       ├── custom.go      # Predefined errors
-│       └── README.md      # Error package docs
+│   ├── errors/            # Error handling package
+│   │   ├── errors.go      # Error type + utilities
+│   │   ├── custom.go      # Predefined errors
+│   │   └── README.md      # Error package docs
+│   └── i18n/              # Internationalization package
+│       ├── translator.go  # Translator interface + implementation
+│       ├── config.go      # i18n config + options
+│       ├── loader.go      # JSON file loader
+│       ├── helper.go      # Context language helpers
+│       ├── errors.go      # i18n error definitions
+│       └── i18n_test.go   # i18n package tests
 ├── utils/                 # Utility packages
 │   ├── array/             # Slice utilities
 │   ├── convert/           # Type conversion
@@ -322,14 +367,15 @@ qi.New(
 │   ├── regexp/            # Regex utilities
 │   └── strings/           # String utilities
 └── example/
-    └── main.go            # Comprehensive example (334 lines)
+    └── main.go            # Comprehensive example
 ```
 
 ## Recent Development Context
 
 Recent commits show:
-- Removed i18n and logger packages (moved out of core)
-- Fixed i18n package design issues
+- Integrated i18n into framework core (`WithI18n` option, auto middleware, `Context.T()`/`Tn()`)
+- Added `pkg/i18n/` package (Translator, JSONLoader, lazy loading, plural support)
 - Enhanced generic routing with middleware support
+- Version: v1.0.3
 
 The framework is production-ready for small-to-medium Go web services that want Gin's performance with better developer experience.

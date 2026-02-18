@@ -6,10 +6,10 @@ import "time"
 type DBType string
 
 const (
-	MySQL      DBType = "mysql"
-	PostgreSQL DBType = "postgres"
-	SQLite     DBType = "sqlite"
-	SQLServer  DBType = "sqlserver"
+	MySQL       DBType = "mysql"
+	PostgresSQL DBType = "postgres"
+	SQLite      DBType = "sqlite"
+	SQLServer   DBType = "sqlserver"
 )
 
 type Config struct {
