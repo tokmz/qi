@@ -37,6 +37,11 @@ func newOTLPExporter(ctx context.Context, cfg *Config) (trace.SpanExporter, erro
 		opts = append(opts, otlptracehttp.WithEndpoint(endpoint))
 	}
 
+	// 非 TLS 连接
+	if cfg.Insecure {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+
 	// 设置请求头（用于认证）
 	if len(cfg.ExporterHeaders) > 0 {
 		opts = append(opts, otlptracehttp.WithHeaders(cfg.ExporterHeaders))

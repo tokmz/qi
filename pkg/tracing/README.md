@@ -92,6 +92,7 @@ type Config struct {
     ExporterType     string            // 导出器类型：otlp/stdout/noop
     ExporterEndpoint string            // 导出器端点
     ExporterHeaders  map[string]string // 导出器请求头（用于认证）
+    Insecure         bool              // 是否使用非 TLS 连接（默认 false）
 
     // 采样配置
     SamplingRate     float64           // 采样率（0.0-1.0）

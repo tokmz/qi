@@ -24,6 +24,9 @@ type Config struct {
 	// 导出器请求头（用于认证）
 	ExporterHeaders map[string]string
 
+	// 是否使用非 TLS 连接（默认 false，即使用 HTTPS）
+	Insecure bool
+
 	// 采样率（0.0-1.0，1.0 表示全量采集）
 	SamplingRate float64
 
