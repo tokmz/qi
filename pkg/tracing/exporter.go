@@ -10,9 +10,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 )
 
-// newExporter 根据配置创建导出器
-func newExporter(ctx context.Context, cfg *Config) (trace.SpanExporter, error) {
-	switch cfg.ExporterType {
+// newExporterByType 根据指定类型创建导出器
+func newExporterByType(ctx context.Context, cfg *Config, exporterType string) (trace.SpanExporter, error) {
+	switch exporterType {
 	case "otlp":
 		return newOTLPExporter(ctx, cfg)
 	case "stdout":
@@ -20,7 +20,7 @@ func newExporter(ctx context.Context, cfg *Config) (trace.SpanExporter, error) {
 	case "noop":
 		return newNoopExporter(), nil
 	default:
-		return nil, fmt.Errorf("unsupported exporter type: %s", cfg.ExporterType)
+		return nil, fmt.Errorf("unsupported exporter type: %s", exporterType)
 	}
 }
 

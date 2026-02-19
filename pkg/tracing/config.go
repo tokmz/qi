@@ -81,6 +81,18 @@ func (c *Config) Validate() error {
 		return ErrInvalidConfig("invalid exporter type: " + c.ExporterType)
 	}
 
+	// 批处理参数零值回退到默认值
+	defaults := DefaultConfig()
+	if c.BatchTimeout <= 0 {
+		c.BatchTimeout = defaults.BatchTimeout
+	}
+	if c.MaxExportBatchSize <= 0 {
+		c.MaxExportBatchSize = defaults.MaxExportBatchSize
+	}
+	if c.MaxQueueSize <= 0 {
+		c.MaxQueueSize = defaults.MaxQueueSize
+	}
+
 	return nil
 }
 

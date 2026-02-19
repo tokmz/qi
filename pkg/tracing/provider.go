@@ -3,8 +3,6 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 
 	"go.opentelemetry.io/otel"
@@ -31,14 +29,15 @@ func NewTracerProvider(cfg *Config) (*trace.TracerProvider, error) {
 		return nil, err
 	}
 
-	// 如果禁用追踪，返回 noop provider
+	// 如果禁用追踪，使用 noop 导出器
+	exporterType := cfg.ExporterType
 	if !cfg.Enabled {
-		cfg.ExporterType = "noop"
+		exporterType = "noop"
 	}
 
 	// 创建导出器
 	ctx := context.Background()
-	exporter, err := newExporter(ctx, cfg)
+	exporter, err := newExporterByType(ctx, cfg, exporterType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create exporter: %w", err)
 	}
@@ -110,29 +109,12 @@ func newResource(cfg *Config) (*resource.Resource, error) {
 		attrs = append(attrs, resource.WithAttributes(customAttrs...))
 	}
 
-	// 从环境变量读取资源属性
-	if envAttrs := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); envAttrs != "" {
-		attrs = append(attrs, resource.WithAttributes(parseResourceAttributes(envAttrs)...))
-	}
+	// 从环境变量读取资源属性（WithFromEnv 已覆盖 OTEL_RESOURCE_ATTRIBUTES）
 
 	// 合并默认资源（包含 host、process 等信息）
 	attrs = append(attrs, resource.WithFromEnv(), resource.WithTelemetrySDK())
 
 	return resource.New(context.Background(), attrs...)
-}
-
-// parseResourceAttributes 解析环境变量中的资源属性
-// 格式: key1=value1,key2=value2
-func parseResourceAttributes(envAttrs string) []attribute.KeyValue {
-	var attrs []attribute.KeyValue
-	pairs := strings.Split(envAttrs, ",")
-	for _, pair := range pairs {
-		kv := strings.SplitN(pair, "=", 2)
-		if len(kv) == 2 {
-			attrs = append(attrs, attribute.String(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])))
-		}
-	}
-	return attrs
 }
 
 // Shutdown 优雅关闭 TracerProvider
@@ -146,7 +128,14 @@ func Shutdown(ctx context.Context) error {
 		return nil
 	}
 
-	return tp.Shutdown(ctx)
+	err := tp.Shutdown(ctx)
+
+	// 置空防止重复操作
+	providerMu.Lock()
+	globalProvider = nil
+	providerMu.Unlock()
+
+	return err
 }
 
 // GetTracerProvider 获取全局 TracerProvider

@@ -79,16 +79,19 @@ func Tracing(cfgs ...*TracingConfig) qi.HandlerFunc {
 			// FullPath() 未匹配路由时返回空字符串，回退到 URL.Path
 			spanName = fmt.Sprintf("%s %s", c.Request().Method, c.Request().URL.Path)
 		}
+		spanAttrs := []attribute.KeyValue{
+			semconv.HTTPRequestMethodKey.String(c.Request().Method),
+			semconv.URLPath(c.Request().URL.Path),
+			semconv.ServerAddress(c.Request().Host),
+			semconv.UserAgentOriginalKey.String(c.Request().UserAgent()),
+			attribute.String("http.client_ip", c.ClientIP()),
+		}
+		if fullPath := c.FullPath(); fullPath != "" {
+			spanAttrs = append(spanAttrs, semconv.HTTPRouteKey.String(fullPath))
+		}
 		ctx, span := tracer.Start(ctx, spanName,
 			trace.WithSpanKind(trace.SpanKindServer),
-			trace.WithAttributes(
-				semconv.HTTPRequestMethodKey.String(c.Request().Method),
-				semconv.HTTPRouteKey.String(c.FullPath()),
-				semconv.URLPath(c.Request().URL.Path),
-				semconv.ServerAddress(c.Request().Host),
-				semconv.UserAgentOriginalKey.String(c.Request().UserAgent()),
-				attribute.String("http.client_ip", c.ClientIP()),
-			),
+			trace.WithAttributes(spanAttrs...),
 		)
 		defer span.End()
 
