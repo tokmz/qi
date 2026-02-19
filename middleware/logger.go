@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/tokmz/qi"
@@ -67,7 +68,7 @@ func Logger(log logger.Logger, cfgs ...*LoggerConfig) qi.HandlerFunc {
 			zap.String("method", method),
 			zap.String("path", path),
 			zap.Int("status", status),
-			zap.Duration("latency", latency),
+			zap.String("latency", formatLatency(latency)),
 			zap.String("client_ip", clientIP),
 		}
 
@@ -91,5 +92,17 @@ func Logger(log logger.Logger, cfgs ...*LoggerConfig) qi.HandlerFunc {
 		} else {
 			cfg.Logger.Info("request", fields...)
 		}
+	}
+}
+
+// formatLatency 将耗时格式化为人类可读的字符串
+func formatLatency(d time.Duration) string {
+	switch {
+	case d >= time.Second:
+		return strconv.FormatFloat(d.Seconds(), 'f', 2, 64) + "s"
+	case d >= time.Millisecond:
+		return strconv.FormatFloat(float64(d)/float64(time.Millisecond), 'f', 2, 64) + "ms"
+	default:
+		return strconv.FormatFloat(float64(d)/float64(time.Microsecond), 'f', 2, 64) + "µs"
 	}
 }
