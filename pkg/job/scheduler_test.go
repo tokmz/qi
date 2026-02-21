@@ -444,7 +444,9 @@ func TestTriggerJob_GoroutineLeak(t *testing.T) {
 // TestTriggerJob_MultipleCancel 测试多次取消 context
 func TestTriggerJob_MultipleCancel(t *testing.T) {
 	store := newMockStorage()
-	scheduler := NewScheduler(store, DefaultConfig())
+	cfg := DefaultConfig()
+	cfg.JobTimeout = 2 * time.Second // 短超时，避免测试阻塞
+	scheduler := NewScheduler(store, cfg)
 
 	// 注册处理器
 	scheduler.RegisterHandlerFunc("cancel-test", func(ctx context.Context, payload string) (string, error) {
@@ -480,8 +482,8 @@ func TestTriggerJob_MultipleCancel(t *testing.T) {
 	cancel()
 	cancel()
 
-	// 等待任务完成
-	time.Sleep(100 * time.Millisecond)
+	// 等待任务超时完成（JobTimeout=2s）
+	time.Sleep(3 * time.Second)
 
 	t.Log("多次取消 context 测试通过")
 }
