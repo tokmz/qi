@@ -34,7 +34,7 @@ func defaultLogger() HandlerFunc {
 			zap.String("method", method),
 			zap.String("path", path),
 			zap.Int("status", status),
-			zap.Duration("latency", latency),
+			zap.String("latency", latency.String()),
 			zap.String("client_ip", clientIP),
 		}
 
