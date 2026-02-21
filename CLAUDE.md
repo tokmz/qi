@@ -125,7 +125,49 @@ type Error struct {
 3. Maps to appropriate HTTP status code
 4. Returns JSON with business code + message
 
-### Response Format
+### HTTP Client (`pkg/request/`)
+
+Chainable HTTP client built on `net/http.Client`, with retry, interceptors, and OpenTelemetry tracing.
+
+**Core Types:**
+- `Client` — wraps `http.Client`, created via `New(opts...)` or `NewWithConfig(cfg)`
+- `Request` — chainable builder: `SetHeader`, `SetQuery`, `SetBody`, `SetBearerToken`, `SetTimeout`, `SetRetry`, etc.
+- `Response` — wraps status code, headers, body bytes, duration. Methods: `IsSuccess()`, `IsError()`, `Unmarshal()`, `String()`
+- `Interceptor` — interface with `BeforeRequest` / `AfterResponse` hooks
+- `Logger` — minimal interface (`InfoContext` / `ErrorContext` with `keysAndValues ...any`), nil by default
+
+**Generic Response Parsing (package-level functions):**
+```go
+user, err := request.Do[User](client.Post("/users").SetBody(&req))
+items, err := request.DoList[Item](client.Get("/items"))
+```
+
+**Retry:**
+- Exponential backoff with ±25% jitter
+- Default condition: network error or 5xx
+- `SetBody` JSON body supports replay across retries; `SetRawBody` does not
+- Per-request override via `SetRetry()`
+
+**Interceptors:**
+- `NewLoggingInterceptor(log)` — logs request/response via `Logger` interface
+- `NewAuthInterceptor(tokenFunc)` — dynamic Bearer token injection
+
+**Tracing:**
+- `WithTracing(true)` enables OTel client spans + W3C header propagation
+- Uses `tracingTransport` at RoundTripper layer
+
+**Error Codes (4000 series):**
+- `ErrRequestFailed` (4001) / `ErrTimeout` (4002) / `ErrMarshal` (4003) / `ErrUnmarshal` (4004) / `ErrMaxRetry` (4005) / `ErrInvalidURL` (4006)
+
+**Key Design Decisions:**
+- `bodyBytes []byte` caching for retry replay (not `io.Reader`)
+- `SetBody` marshal errors deferred to `Do()` via `Request.err`
+- `mergeHeaders` returns new map — never mutates `Request.headers`
+- `RetryConfig` value-copied before `normalize()` — never mutates caller's config
+- `Do[T]` / `DoList[T]` check HTTP status before unmarshal; error body truncated to 512 bytes
+- Zero dependency on `zap` / `pkg/logger` — own `Logger` interface in `logger.go`
+
+
 
 **Standard Response:**
 ```json
@@ -330,7 +372,7 @@ qi.New(
 6. **TraceID is automatic** - Set in middleware, auto-injected in responses
 7. **Options pattern for config** - `qi.New(qi.WithAddr(":8080"), ...)`
 8. **Graceful shutdown built-in** - Just call `engine.Run()`
-9. **i18n via WithI18n()** - `c.T("key")` / `c.Tn("one", "other", n)` in handlers
+10. **HTTP client via `pkg/request`** - `request.New(request.WithBaseURL(...))`, chainable `Do[T]()` generics
 
 ## Project Structure
 
@@ -352,6 +394,19 @@ qi.New(
 │   │   ├── errors.go      # Error type + utilities
 │   │   ├── custom.go      # Predefined errors
 │   │   └── README.md      # Error package docs
+│   ├── request/           # HTTP client package
+│   │   ├── logger.go      # Logger interface (minimal, no zap dep)
+│   │   ├── errors.go      # Error definitions (4000 series)
+│   │   ├── config.go      # Config + Option functions
+│   │   ├── retry.go       # RetryConfig, exponential backoff
+│   │   ├── interceptor.go # Interceptor interface + built-in impls
+│   │   ├── transport.go   # tracingTransport (OTel propagation)
+│   │   ├── multipart.go   # File upload / multipart builder
+│   │   ├── response.go    # Response wrapper, Do[T](), DoList[T]()
+│   │   ├── request.go     # Request chainable builder
+│   │   ├── client.go      # Client core
+│   │   ├── request_test.go # Unit tests
+│   │   └── README.md      # Package docs
 │   └── i18n/              # Internationalization package
 │       ├── translator.go  # Translator interface + implementation
 │       ├── config.go      # i18n config + options
@@ -373,9 +428,10 @@ qi.New(
 ## Recent Development Context
 
 Recent commits show:
+- Added `pkg/request/` HTTP client package (chainable API, generics, retry, interceptors, OTel tracing)
 - Integrated i18n into framework core (`WithI18n` option, auto middleware, `Context.T()`/`Tn()`)
 - Added `pkg/i18n/` package (Translator, JSONLoader, lazy loading, plural support)
 - Enhanced generic routing with middleware support
-- Version: v1.0.3
+- Version: v1.0.7
 
 The framework is production-ready for small-to-medium Go web services that want Gin's performance with better developer experience.
