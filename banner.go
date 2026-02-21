@@ -12,7 +12,7 @@ import (
 )
 
 // Version 框架版本号
-const Version = "1.0.6"
+const Version = "1.0.7"
 
 // banner ASCII Art
 const banner = `
