@@ -8,6 +8,7 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 - 📦 **统一响应** - 标准化的 JSON 响应格式
 - 🔄 **自动绑定** - 根据 Content-Type 和 HTTP 方法自动绑定请求参数
 - 🎯 **泛型路由** - 使用 Go 泛型简化路由处理
+- 📝 **OpenAPI 3.0** - 泛型路由自动生成 OpenAPI 文档，内置 Swagger UI
 - 🛡️ **错误处理** - 统一的错误码和 HTTP 状态码映射
 - 🔍 **链路追踪** - 内置 TraceID 支持，OpenTelemetry 集成
 - ⚙️ **Options 模式** - 灵活的配置方式
@@ -97,33 +98,42 @@ func main() {
 ### 高级泛型路由
 
 ```go
-// 有请求有响应
-qi.Handle[CreateUserReq, UserResp](r.POST, "/user",
+import "github.com/tokmz/qi/pkg/openapi"
+
+// 有请求有响应（自动生成 OpenAPI 文档）
+qi.POST[CreateUserReq, UserResp](r, "/user",
     func(c *qi.Context, req *CreateUserReq) (*UserResp, error) {
-        // 自动绑定 req，自动处理响应
         return &UserResp{ID: 1, Name: req.Name}, nil
-    })
+    },
+    openapi.Doc(openapi.Summary("创建用户"), openapi.Tags("Users")),
+)
 
 // 有请求无响应
-qi.Handle0[DeleteUserReq](r.DELETE, "/user/:id",
+qi.DELETE0[DeleteUserReq](r, "/user/:id",
     func(c *qi.Context, req *DeleteUserReq) error {
-        // 自动绑定 URI 参数
         return deleteUser(req.ID)
-    })
+    },
+    openapi.Doc(openapi.Summary("删除用户"), openapi.Tags("Users")),
+)
 
 // 无请求有响应
-qi.HandleOnly[InfoResp](r.GET, "/info",
+qi.GETOnly[InfoResp](r, "/info",
     func(c *qi.Context) (*InfoResp, error) {
         return &InfoResp{Version: "1.0.0"}, nil
-    })
+    },
+    openapi.Doc(openapi.Summary("系统信息"), openapi.Tags("System")),
+)
 
 // 泛型路由支持中间件（单个或多个）
-qi.Handle[CreateUserReq, UserResp](r.POST, "/admin/user",
+qi.POST[CreateUserReq, UserResp](r, "/admin/user",
     createUserHandler,
-    authMiddleware,      // 第一个中间件
-    adminMiddleware,     // 第二个中间件
+    openapi.Doc(openapi.Summary("管理员创建用户"), openapi.Tags("Admin")),
+    authMiddleware,
+    adminMiddleware,
 )
 ```
+
+> **向后兼容**：原有的 `qi.Handle[Req, Resp](r.POST, ...)` API 仍然可用，但不会自动收集 OpenAPI 文档。
 
 ### 路由组和中间件
 
@@ -145,36 +155,39 @@ func traceMiddleware(c *qi.Context) {
 // 全局中间件
 engine.Use(traceMiddleware)
 
-// 路由组中间件
+// 路由组中间件 + OpenAPI Tag/Security
 v1 := r.Group("/api/v1")
+v1.SetTag("V1", "V1 版本接口")
+v1.SetSecurity("BearerAuth")
 v1.Use(authMiddleware)
 
-qi.Handle[LoginReq, TokenResp](v1.POST, "/login", loginHandler)
+// 登录接口：NoSecurity 覆盖组级认证
+qi.POST[LoginReq, TokenResp](v1, "/login", loginHandler,
+    openapi.Doc(openapi.Summary("用户登录"), openapi.NoSecurity()),
+)
+
+// 继承组级 BearerAuth 认证
+qi.GETOnly[UserResp](v1, "/profile", profileHandler,
+    openapi.Doc(openapi.Summary("获取个人信息")),
+)
+
+// 非泛型路由手动注册文档
+r.GET("/ping", pingHandler)
+r.DocRoute("GET", "/ping", openapi.Doc(
+    openapi.Summary("健康检查"),
+    openapi.Tags("System"),
+))
 
 // 单个路由使用中间件（不需要路由组）
-qi.Handle[CreateUserReq, UserResp](
-    r.POST,
-    "/admin/user",
+qi.POST[CreateUserReq, UserResp](r, "/admin/user",
     createUserHandler,
-    authMiddleware,      // 认证中间件
-    adminMiddleware,     // 管理员中间件
+    openapi.Doc(openapi.Summary("管理员创建用户")),
+    authMiddleware,
+    adminMiddleware,
 )
 
 // 基础路由也支持中间件
 r.GET("/admin/dashboard", dashboardHandler, authMiddleware, adminMiddleware)
-
-// 中间件执行顺序
-v1 := r.Group("/api/v1")
-v1.Use(middleware1)  // 第一个执行
-
-qi.Handle[Req, Resp](
-    v1.POST,
-    "/user",
-    handler,
-    middleware2,  // 第二个执行
-    middleware3,  // 第三个执行
-)
-// handler 最后执行
 ```
 
 ## 配置选项
@@ -199,6 +212,7 @@ qi.WithAfterShutdown(func() {})           // 关机后回调
 qi.WithTrustedProxies("127.0.0.1")        // 信任的代理
 qi.WithMaxMultipartMemory(32 << 20)       // Multipart 内存（32MB）
 qi.WithI18n(&i18n.Config{...})            // 国际化配置（nil 不启用）
+qi.WithOpenAPI(&openapi.Config{...})      // OpenAPI 文档配置（nil 不启用）
 ```
 
 ### 默认配置
@@ -433,6 +447,142 @@ if err := engine.RunTLS(":443", "cert.pem", "key.pem"); err != nil {
 }
 ```
 
+## OpenAPI 3.0 文档自动生成
+
+Qi 利用泛型路由的类型参数，在路由注册时自动收集请求/响应 Schema，启动时构建完整的 OpenAPI 3.0 spec。反射仅在初始化阶段执行，运行时零开销。
+
+### 启用 OpenAPI
+
+```go
+import "github.com/tokmz/qi/pkg/openapi"
+
+engine := qi.Default(
+    qi.WithOpenAPI(&openapi.Config{
+        Title:       "My API",
+        Version:     "1.0.0",
+        Description: "API 文档",
+        Path:        "/openapi.json",   // spec 端点路径
+        SwaggerUI:   "/docs",           // Swagger UI 路径（空字符串不启用）
+        SecuritySchemes: map[string]openapi.SecurityScheme{
+            "BearerAuth": {
+                Type:         "http",
+                Scheme:       "bearer",
+                BearerFormat: "JWT",
+            },
+        },
+    }),
+)
+```
+
+启动后访问：
+- `GET /openapi.json` — OpenAPI 3.0 JSON spec
+- `GET /docs` — Swagger UI 交互式文档
+
+### 泛型路由自动收集
+
+使用 `qi.POST`、`qi.GET` 等顶层泛型函数注册路由时，类型信息和文档元数据自动收集：
+
+```go
+// 请求/响应类型通过泛型参数自动推导 Schema
+qi.POST[CreateUserReq, UserResp](r, "/users", handler,
+    openapi.Doc(
+        openapi.Summary("创建用户"),
+        openapi.Desc("创建一个新用户并返回用户信息"),
+        openapi.Tags("Users"),
+    ),
+)
+
+// GET 请求：form tag 字段自动识别为 query 参数
+qi.GET[ListReq, ListResp](r, "/users", listHandler,
+    openapi.Doc(openapi.Summary("用户列表"), openapi.Tags("Users")),
+)
+
+// DELETE：uri tag 字段自动识别为 path 参数
+qi.DELETE0[DeleteReq](r, "/users/:id", deleteHandler,
+    openapi.Doc(openapi.Summary("删除用户"), openapi.Tags("Users")),
+)
+
+// 无请求参数的路由
+qi.GETOnly[InfoResp](r, "/info", infoHandler,
+    openapi.Doc(openapi.Summary("系统信息"), openapi.Tags("System")),
+)
+```
+
+### 路由组 Tag 和 Security 继承
+
+```go
+v1 := r.Group("/api/v1")
+v1.SetTag("V1", "V1 版本接口")       // 组内路由默认 tag
+v1.SetSecurity("BearerAuth")          // 组内路由默认认证
+
+// 继承组级 tag 和 security
+qi.GETOnly[ProfileResp](v1, "/profile", profileHandler,
+    openapi.Doc(openapi.Summary("获取个人信息")),
+)
+
+// NoSecurity 覆盖组级认证（如登录接口）
+qi.POST[LoginReq, TokenResp](v1, "/login", loginHandler,
+    openapi.Doc(openapi.Summary("用户登录"), openapi.NoSecurity()),
+)
+```
+
+### 非泛型路由手动注册文档
+
+```go
+r.GET("/ping", pingHandler)
+r.DocRoute("GET", "/ping", openapi.Doc(
+    openapi.Summary("健康检查"),
+    openapi.Tags("System"),
+    openapi.RequestType(PingReq{}),    // 可选：手动指定类型
+    openapi.ResponseType(PingResp{}),
+))
+```
+
+### Struct Tag 自动推导
+
+Qi 根据 struct tag 自动推导参数位置和约束：
+
+```go
+type CreateUserReq struct {
+    Name  string `json:"name" binding:"required" desc:"用户名"`
+    Email string `json:"email" binding:"required,email" desc:"邮箱"`
+}
+
+type ListReq struct {
+    Page int    `form:"page" binding:"required,min=1" desc:"页码"`
+    Size int    `form:"size" binding:"min=1,max=100" desc:"每页数量"`
+}
+
+type DeleteReq struct {
+    ID int64 `uri:"id" binding:"required" desc:"用户ID"`
+}
+```
+
+| Tag | 作用 |
+|-----|------|
+| `json` | POST/PUT/PATCH 请求体字段名 |
+| `form` | GET/DELETE query 参数名 |
+| `uri` | path 参数 |
+| `header` | header 参数 |
+| `binding` | 验证规则 → OpenAPI 约束（required, min, max, email, uuid, oneof 等） |
+| `desc` | 字段描述 |
+| `example` | 字段示例值 |
+
+### Doc 选项
+
+```go
+openapi.Doc(
+    openapi.Summary("摘要"),
+    openapi.Desc("详细描述"),
+    openapi.Tags("Users", "Admin"),
+    openapi.Security("BearerAuth"),
+    openapi.NoSecurity(),
+    openapi.Deprecated(),
+    openapi.RequestType(MyReq{}),
+    openapi.ResponseType(MyResp{}),
+)
+```
+
 ## 国际化 (i18n)
 
 Qi 内置国际化支持，通过 `WithI18n` 配置即可启用。框架自动初始化翻译器并注册语言检测中间件，Context 上直接调用 `T()`/`Tn()`。
@@ -483,11 +633,13 @@ r.GET("/hello", func(c *qi.Context) {
 })
 
 // 泛型路由
-qi.Handle[HelloReq, HelloResp](r.POST, "/hello",
+qi.POST[HelloReq, HelloResp](r, "/hello",
     func(c *qi.Context, req *HelloReq) (*HelloResp, error) {
         msg := c.T("hello", "Name", req.Name)
         return &HelloResp{Message: msg}, nil
-    })
+    },
+    openapi.Doc(openapi.Summary("Hello")),
+)
 ```
 
 ### 复数形式
@@ -661,6 +813,15 @@ func (rg *RouterGroup) Group(path string, middlewares ...HandlerFunc) *RouterGro
 
 // Use 注册中间件到路由组
 func (rg *RouterGroup) Use(middlewares ...HandlerFunc)
+
+// SetTag 设置路由组的默认 OpenAPI tag
+func (rg *RouterGroup) SetTag(name, description string)
+
+// SetSecurity 设置路由组的默认安全方案
+func (rg *RouterGroup) SetSecurity(schemes ...string)
+
+// DocRoute 为非泛型路由手动注册 OpenAPI 文档
+func (rg *RouterGroup) DocRoute(method, path string, doc *openapi.DocOption)
 ```
 
 #### 基础路由方法
@@ -708,7 +869,7 @@ func (rg *RouterGroup) StaticFS(relativePath string, fs http.FileSystem)
 
 ```go
 // Handle 有请求参数，有响应数据（自动绑定 + 自动响应）
-le[Req any, Resp any](
+func Handle[Req any, Resp any](
     register RouteRegister,
     path string,
     handler func(*Context, *Req) (*Resp, error),
@@ -730,6 +891,30 @@ func HandleOnly[Resp any](
     handler func(*Context) (*Resp, error),
     middlewares ...HandlerFunc,
 )
+```
+
+#### OpenAPI 泛型路由方法
+
+自动收集类型信息生成 OpenAPI 文档的泛型函数：
+
+```go
+// Full: 有请求 + 有响应（GET/POST/PUT/PATCH/DELETE）
+func GET[Req, Resp any](rg *RouterGroup, path string, handler func(*Context, *Req) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
+func POST[Req, Resp any](rg *RouterGroup, path string, handler func(*Context, *Req) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
+func PUT[Req, Resp any](rg *RouterGroup, path string, handler func(*Context, *Req) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
+func PATCH[Req, Resp any](rg *RouterGroup, path string, handler func(*Context, *Req) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
+func DELETE[Req, Resp any](rg *RouterGroup, path string, handler func(*Context, *Req) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
+
+// Request-only: 有请求，无响应数据（GET0/POST0/PUT0/PATCH0/DELETE0）
+func GET0[Req any](rg *RouterGroup, path string, handler func(*Context, *Req) error, doc *openapi.DocOption, middlewares ...HandlerFunc)
+func POST0[Req any](rg *RouterGroup, path string, handler func(*Context, *Req) error, doc *openapi.DocOption, middlewares ...HandlerFunc)
+func PUT0[Req any](rg *RouterGroup, path string, handler func(*Context, *Req) error, doc *openapi.DocOption, middlewares ...HandlerFunc)
+func PATCH0[Req any](rg *RouterGroup, path string, handler func(*Context, *Req) error, doc *openapi.DocOption, middlewares ...HandlerFunc)
+func DELETE0[Req any](rg *RouterGroup, path string, handler func(*Context, *Req) error, doc *openapi.DocOption, middlewares ...HandlerFunc)
+
+// Response-only: 无请求，有响应（GETOnly/POSTOnly）
+func GETOnly[Resp any](rg *RouterGroup, path string, handler func(*Context) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
+func POSTOnly[Resp any](rg *RouterGroup, path string, handler func(*Context) (*Resp, error), doc *openapi.DocOption, middlewares ...HandlerFunc)
 ```
 
 ### Context API
