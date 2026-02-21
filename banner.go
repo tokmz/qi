@@ -29,13 +29,19 @@ func (e *Engine) printBanner(addr string) {
 	out := os.Stdout
 
 	// 拼接访问地址
-	var open string
+	var baseURL string
 	if strings.HasPrefix(addr, ":") {
-		open = "http://127.0.0.1" + addr
+		baseURL = "http://127.0.0.1" + addr
 	} else if strings.Contains(addr, ":") {
-		open = "http://" + addr
+		baseURL = "http://" + addr
 	} else {
-		open = "http://127.0.0.1:" + addr
+		baseURL = "http://127.0.0.1:" + addr
+	}
+
+	// 如果启用了 Swagger UI，open 链接指向文档页面
+	open := baseURL
+	if e.config.OpenAPI != nil && e.config.OpenAPI.SwaggerUI != "" {
+		open = baseURL + e.config.OpenAPI.SwaggerUI + "/"
 	}
 
 	// 打印 banner
