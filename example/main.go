@@ -7,11 +7,28 @@ import (
 
 	"github.com/tokmz/qi"
 	"github.com/tokmz/qi/pkg/errors"
+	"github.com/tokmz/qi/pkg/openapi"
 )
 
 func main() {
 	// 创建 Engine（带默认中间件：Logger + Recovery）
-	engine := qi.Default()
+	// 启用 OpenAPI 文档自动生成 + Swagger UI
+	engine := qi.Default(
+		qi.WithOpenAPI(&openapi.Config{
+			Title:       "Qi Example API",
+			Version:     "1.0.0",
+			Description: "Qi 框架示例 API 文档",
+			Path:        "/openapi.json",
+			SwaggerUI:   "/docs",
+			SecuritySchemes: map[string]openapi.SecurityScheme{
+				"BearerAuth": {
+					Type:         "http",
+					Scheme:       "bearer",
+					BearerFormat: "JWT",
+				},
+			},
+		}),
+	)
 	r := engine.Router()
 
 	// 注册全局中间件
@@ -21,6 +38,10 @@ func main() {
 	r.GET("/ping", func(c *qi.Context) {
 		c.Success("pong")
 	})
+	r.DocRoute("GET", "/ping", openapi.Doc(
+		openapi.Summary("健康检查"),
+		openapi.Tags("System"),
+	))
 
 	// 手动绑定参数（绑定失败时自动响应错误）
 	r.POST("/manual", func(c *qi.Context) {
@@ -30,42 +51,77 @@ func main() {
 		}
 		c.Success(&UserResp{ID: 1, Name: req.Name, Email: req.Email})
 	})
+	r.DocRoute("POST", "/manual", openapi.Doc(
+		openapi.Summary("手动绑定示例"),
+		openapi.Tags("System"),
+		openapi.RequestType(CreateUserReq{}),
+		openapi.ResponseType(UserResp{}),
+	))
 
-	// ============ 高级泛型路由示例 ============
+	// ============ 泛型路由 + OpenAPI 文档 ============
 
 	// 有请求有响应
-	qi.Handle[CreateUserReq, UserResp](r.POST, "/user", createUserHandler)
+	qi.POST[CreateUserReq, UserResp](r, "/user", createUserHandler,
+		openapi.Doc(openapi.Summary("创建用户"), openapi.Tags("Users")),
+	)
 
 	// 有请求无响应（删除操作）
-	qi.Handle0[DeleteUserReq](r.DELETE, "/user/:id", deleteUserHandler)
+	qi.DELETE0[DeleteUserReq](r, "/user/:id", deleteUserHandler,
+		openapi.Doc(openapi.Summary("删除用户"), openapi.Tags("Users")),
+	)
 
 	// 无请求有响应（查询操作）
-	qi.HandleOnly[InfoResp](r.GET, "/info", infoHandler)
+	qi.GETOnly[InfoResp](r, "/info", infoHandler,
+		openapi.Doc(openapi.Summary("系统信息"), openapi.Tags("System")),
+	)
 
 	// GET 请求自动绑定 Query 参数
-	qi.Handle[ListUserReq, ListUserResp](r.GET, "/users", listUsersHandler)
+	qi.GET[ListUserReq, ListUserResp](r, "/users", listUsersHandler,
+		openapi.Doc(openapi.Summary("用户列表"), openapi.Tags("Users")),
+	)
 
 	// ============ 路由组示例 ============
 
-	// API v1 路由组
+	// API v1 路由组（带认证 + Tag）
 	v1 := r.Group("/api/v1")
+	v1.SetTag("V1", "V1 版本接口")
+	v1.SetSecurity("BearerAuth")
 	v1.Use(authMiddleware) // 路由组级别中间件
 
-	qi.Handle[LoginReq, TokenResp](v1.POST, "/login", loginHandler)
-	qi.HandleOnly[UserResp](v1.GET, "/profile", profileHandler)
-	qi.Handle[UpdateProfileReq, UserResp](v1.PUT, "/profile", updateProfileHandler)
+	// 登录接口：NoSecurity 覆盖组级认证
+	qi.POST[LoginReq, TokenResp](v1, "/login", loginHandler,
+		openapi.Doc(openapi.Summary("用户登录"), openapi.NoSecurity()),
+	)
+	qi.GETOnly[UserResp](v1, "/profile", profileHandler,
+		openapi.Doc(openapi.Summary("获取个人信息")),
+	)
+	qi.PUT[UpdateProfileReq, UserResp](v1, "/profile", updateProfileHandler,
+		openapi.Doc(openapi.Summary("更新个人信息")),
+	)
 
 	// API v2 路由组（嵌套路由组）
 	v2 := r.Group("/api/v2")
+	v2.SetTag("V2", "V2 版本接口")
+	v2.SetSecurity("BearerAuth")
 	v2.Use(authMiddleware)
 
 	// v2 下的用户管理子组
 	userGroup := v2.Group("/users")
-	qi.Handle[CreateUserReq, UserResp](userGroup.POST, "", createUserHandler)
-	qi.HandleOnly[ListUserResp](userGroup.GET, "", listUsersHandlerV2)
-	qi.HandleOnly[UserResp](userGroup.GET, "/:id", getUserHandler)
-	qi.Handle[UpdateUserReq, UserResp](userGroup.PUT, "/:id", updateUserHandler)
-	qi.Handle0[DeleteUserReq](userGroup.DELETE, "/:id", deleteUserHandler)
+	qi.POST[CreateUserReq, UserResp](userGroup, "", createUserHandler,
+		openapi.Doc(openapi.Summary("创建用户")),
+	)
+	qi.GETOnly[ListUserResp](userGroup, "", listUsersHandlerV2,
+		openapi.Doc(openapi.Summary("用户列表")),
+	)
+	qi.GETOnly[UserResp](userGroup, "/:id", getUserHandler,
+		openapi.Doc(openapi.Summary("获取用户详情")),
+	)
+	qi.PUT[UpdateUserReq, UserResp](userGroup, "/:id", updateUserHandler,
+		openapi.Doc(openapi.Summary("更新用户")),
+	)
+	qi.DELETE0[DeleteUserReq](userGroup, "/:id", deleteUserHandler,
+		openapi.Doc(openapi.Summary("删除用户")),
+	)
 
 	// ============ 错误处理示例 ============
 	r.GET("/error/bad-request", func(c *qi.Context) {
@@ -103,6 +159,8 @@ func main() {
 	// r.StaticFile("/favicon.ico", "./public/favicon.ico")
 
 	// 启动服务器
+	// GET /openapi.json → OpenAPI 3.0 spec
+	// GET /docs          → Swagger UI
 	log.Println("Server starting on :8080")
 	if err := engine.Run(":8080"); err != nil {
 		log.Fatal("Failed to start server:", err)
@@ -112,54 +170,54 @@ func main() {
 // ============ 数据结构定义 ============
 
 type CreateUserReq struct {
-	Name  string `json:"name" binding:"required"`
-	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required" desc:"用户名"`
+	Email string `json:"email" binding:"required,email" desc:"邮箱"`
 }
 
 type UserResp struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	ID    int64  `json:"id" desc:"用户ID"`
+	Name  string `json:"name" desc:"用户名"`
+	Email string `json:"email" desc:"邮箱"`
 }
 
 type DeleteUserReq struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
+	ID int64 `uri:"id" binding:"required,min=1" desc:"用户ID"`
 }
 
 type InfoResp struct {
-	Version   string `json:"version"`
-	BuildTime string `json:"build_time"`
+	Version   string `json:"version" desc:"版本号"`
+	BuildTime string `json:"build_time" desc:"构建时间"`
 }
 
 type ListUserReq struct {
-	Page int `form:"page" binding:"required,min=1"`
-	Size int `form:"size" binding:"required,min=1,max=100"`
+	Page int `form:"page" binding:"required,min=1" desc:"页码"`
+	Size int `form:"size" binding:"required,min=1,max=100" desc:"每页数量"`
 }
 
 type ListUserResp struct {
-	List  []UserResp `json:"list"`
-	Total int64      `json:"total"`
+	List  []UserResp `json:"list" desc:"用户列表"`
+	Total int64      `json:"total" desc:"总数"`
 }
 
 type LoginReq struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required" desc:"用户名"`
+	Password string `json:"password" binding:"required,min=6" desc:"密码"`
 }
 
 type TokenResp struct {
-	Token     string `json:"token"`
-	ExpiresAt int64  `json:"expires_at"`
+	Token     string `json:"token" desc:"访问令牌"`
+	ExpiresAt int64  `json:"expires_at" desc:"过期时间戳"`
 }
 
 type UpdateProfileReq struct {
-	Name  string `json:"name" binding:"required"`
-	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required" desc:"用户名"`
+	Email string `json:"email" binding:"required,email" desc:"邮箱"`
 }
 
 type UpdateUserReq struct {
-	ID    int64  `uri:"id" binding:"required,min=1"`
-	Name  string `json:"name" binding:"required"`
-	Email string `json:"email" binding:"required,email"`
+	ID    int64  `uri:"id" binding:"required,min=1" desc:"用户ID"`
+	Name  string `json:"name" binding:"required" desc:"用户名"`
+	Email string `json:"email" binding:"required,email" desc:"邮箱"`
 }
 
 // ============ 中间件实现 ============
