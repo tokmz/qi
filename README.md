@@ -17,6 +17,7 @@ Qi 是一个基于 Gin 的轻量级 Web 框架，提供统一的响应格式、�
 - 🛠️ **内置 Recovery** - 默认启用 panic 恢复机制，防止服务崩溃
 - 🌍 **国际化** - 内置 i18n 支持，JSON 翻译文件、变量替换、复数形式、懒加载
 - 🔧 **丰富中间件** - CORS、限流、Gzip 压缩、超时控制、链路追踪
+- 📡 **HTTP 客户端** - 链式调用、泛型响应解析、重试、拦截器、OpenTelemetry 追踪
 
 ## 安装
 
@@ -663,6 +664,190 @@ t.HasKey("hello")
 ### 语言回退
 
 当请求的语言中找不到翻译键时，自动回退到默认语言。如果默认语言也找不到，返回 key 本身。
+
+## HTTP 客户端
+
+`pkg/request` 提供链式 HTTP 客户端，支持泛型响应解析、重试、拦截器和 OpenTelemetry 追踪。
+
+### 快速开始
+
+```go
+import "github.com/tokmz/qi/pkg/request"
+
+client := request.New(
+    request.WithBaseURL("https://api.example.com"),
+    request.WithTimeout(10 * time.Second),
+)
+
+// GET 请求
+resp, err := client.Get("/users").
+    SetQuery("page", "1").
+    SetBearerToken("xxx").
+    Do()
+
+// POST + 泛型解析
+user, err := request.Do[User](
+    client.Post("/users").SetBody(&CreateUserReq{Name: "test"}),
+)
+
+// 列表解析
+users, err := request.DoList[User](client.Get("/users"))
+```
+
+### 配置选项
+
+```go
+client := request.New(
+    request.WithBaseURL("https://api.example.com"),
+    request.WithTimeout(10 * time.Second),
+    request.WithHeader("X-App", "myapp/1.0"),
+    request.WithHeaders(map[string]string{"X-A": "1", "X-B": "2"}),
+    request.WithMaxIdleConns(100),
+    request.WithMaxIdleConnsPerHost(10),
+    request.WithMaxConnsPerHost(100),
+    request.WithIdleConnTimeout(90 * time.Second),
+    request.WithInsecureSkipVerify(false),
+    request.WithTransport(customTransport),
+)
+```
+
+### 重试
+
+```go
+client := request.New(
+    request.WithRetry(&request.RetryConfig{
+        MaxAttempts:  3,                      // 最大重试次数
+        InitialDelay: 100 * time.Millisecond, // 初始退避
+        MaxDelay:     5 * time.Second,        // 最大退避
+        Multiplier:   2.0,                    // 退避倍数
+        RetryIf: func(resp *http.Response, err error) bool {
+            return err != nil || resp.StatusCode >= 500
+        },
+    }),
+)
+
+// 请求级覆盖
+resp, err := client.Get("/flaky").
+    SetRetry(&request.RetryConfig{MaxAttempts: 5}).
+    Do()
+```
+
+重试使用指数退避 + ±25% 抖动。`SetBody` 的 JSON body 支持重试重放，`SetRawBody` 的 `io.Reader` 不支持。
+
+### 拦截器
+
+```go
+// 日志拦截器
+client := request.New(
+    request.WithInterceptor(request.NewLoggingInterceptor(myLogger)),
+)
+
+// 认证拦截器（动态 token）
+client := request.New(
+    request.WithInterceptor(request.NewAuthInterceptor(func() string {
+        return getTokenFromCache()
+    })),
+)
+
+// 自定义拦截器实现 Interceptor 接口
+type Interceptor interface {
+    BeforeRequest(ctx context.Context, req *http.Request) error
+    AfterResponse(ctx context.Context, resp *request.Response) error
+}
+```
+
+### 日志
+
+包定义了最小日志接口，默认不记录任何日志：
+
+```go
+type Logger interface {
+    InfoContext(ctx context.Context, msg string, keysAndValues ...any)
+    ErrorContext(ctx context.Context, msg string, keysAndValues ...any)
+}
+
+client := request.New(
+    request.WithLogger(myLogger),
+)
+```
+
+### OpenTelemetry 追踪
+
+```go
+client := request.New(
+    request.WithTracing(true),
+)
+```
+
+启用后：
+- 每次请求创建 `SpanKindClient` Span（名称 `HTTP GET` 等）
+- 自动注入 W3C TraceContext 到请求头
+- Span 记录 method、url、status_code 属性
+- 错误时设置 Span 状态为 Error
+
+### 文件上传
+
+```go
+resp, err := client.Post("/upload").
+    SetFile("avatar", "/path/to/file.png").
+    SetFormData(map[string]string{"name": "test"}).
+    Do()
+
+// 多文件
+resp, err := client.Post("/upload").
+    SetFiles(map[string]string{
+        "file1": "/path/to/a.png",
+        "file2": "/path/to/b.png",
+    }).
+    Do()
+```
+
+### 认证
+
+```go
+// Bearer Token
+resp, err := client.Get("/secure").SetBearerToken("mytoken").Do()
+
+// Basic Auth
+resp, err := client.Get("/auth").SetBasicAuth("admin", "secret").Do()
+```
+
+### 响应处理
+
+```go
+resp, err := client.Get("/data").Do()
+
+resp.StatusCode    // HTTP 状态码
+resp.Headers       // http.Header
+resp.Body          // []byte
+resp.Duration      // 请求耗时
+resp.IsSuccess()   // 2xx
+resp.IsError()     // 4xx/5xx
+resp.String()      // Body 字符串
+resp.Unmarshal(&v) // JSON 反序列化
+```
+
+### 错误码
+
+| 错误码 | HTTP 状态码 | 说明 |
+|--------|-------------|------|
+| 4001 | 500 | 请求失败 |
+| 4002 | 504 | 请求超时 |
+| 4003 | 500 | 序列化失败 |
+| 4004 | 500 | 反序列化失败 |
+| 4005 | 502 | 重试次数已用尽 |
+| 4006 | 400 | 无效的 URL |
+
+```go
+import "github.com/tokmz/qi/pkg/errors"
+
+if errors.Is(err, request.ErrTimeout) {
+    // 处理超时
+}
+if errors.Is(err, request.ErrMaxRetry) {
+    // 重试用尽
+}
+```
 
 ## 中间件
 
