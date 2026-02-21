@@ -2,13 +2,19 @@ package qi
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tokmz/qi/pkg/openapi"
 )
 
 // RouterGroup 路由组
 type RouterGroup struct {
-	group *gin.RouterGroup
+	group           *gin.RouterGroup
+	registry        *openapi.Registry // nil = 未启用 OpenAPI
+	defaultTag      string            // SetTag 设置的默认 tag
+	defaultTagDesc  string            // SetTag 设置的默认 tag 描述
+	defaultSecurity []string          // SetSecurity 设置的默认认证
 }
 
 // ============ 路由组管理 ============
@@ -17,7 +23,11 @@ type RouterGroup struct {
 func (rg *RouterGroup) Group(path string, middlewares ...HandlerFunc) *RouterGroup {
 	handlers := WrapMiddlewares(middlewares...)
 	return &RouterGroup{
-		group: rg.group.Group(path, handlers...),
+		group:           rg.group.Group(path, handlers...),
+		registry:        rg.registry,
+		defaultTag:      rg.defaultTag,
+		defaultTagDesc:  rg.defaultTagDesc,
+		defaultSecurity: rg.defaultSecurity,
 	}
 }
 
@@ -25,6 +35,37 @@ func (rg *RouterGroup) Group(path string, middlewares ...HandlerFunc) *RouterGro
 func (rg *RouterGroup) Use(middlewares ...HandlerFunc) {
 	handlers := WrapMiddlewares(middlewares...)
 	rg.group.Use(handlers...)
+}
+
+// SetTag 设置路由组的默认 tag 名称和描述
+func (rg *RouterGroup) SetTag(name, description string) {
+	rg.defaultTag = name
+	rg.defaultTagDesc = description
+}
+
+// SetSecurity 设置路由组的默认安全方案引用
+func (rg *RouterGroup) SetSecurity(schemes ...string) {
+	rg.defaultSecurity = schemes
+}
+
+// DocRoute 为非泛型路由手动注册文档
+func (rg *RouterGroup) DocRoute(method, path string, doc *openapi.DocOption) {
+	if rg.registry == nil || doc == nil {
+		return
+	}
+	fullPath := strings.TrimRight(rg.group.BasePath(), "/") + path
+	rg.registry.Add(openapi.RouteEntry{
+		Method:          method,
+		Path:            fullPath,
+		BasePath:        rg.group.BasePath(),
+		Type:            openapi.RouteTypeFull,
+		ReqType:         doc.ReqType,
+		RespType:        doc.RespType,
+		Doc:             doc,
+		DefaultTag:      rg.defaultTag,
+		DefaultTagDesc:  rg.defaultTagDesc,
+		DefaultSecurity: rg.defaultSecurity,
+	})
 }
 
 // ============ 基础路由方法 ============

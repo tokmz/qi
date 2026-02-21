@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tokmz/qi/pkg/i18n"
+	"github.com/tokmz/qi/pkg/openapi"
 )
 
 // ServerConfig 服务器配置
@@ -56,6 +57,9 @@ type Config struct {
 
 	// I18n 国际化配置，nil 表示不启用
 	I18n *i18n.Config
+
+	// OpenAPI 文档生成配置，nil 表示不启用
+	OpenAPI *openapi.Config
 }
 
 // Option 配置选项函数
@@ -163,5 +167,12 @@ func WithMaxMultipartMemory(size int64) Option {
 func WithI18n(cfg *i18n.Config) Option {
 	return func(c *Config) {
 		c.I18n = cfg
+	}
+}
+
+// WithOpenAPI 设置 OpenAPI 文档生成配置
+func WithOpenAPI(cfg *openapi.Config) Option {
+	return func(c *Config) {
+		c.OpenAPI = cfg
 	}
 }

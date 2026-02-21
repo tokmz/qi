@@ -2,6 +2,8 @@ package qi
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -9,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/tokmz/qi/pkg/i18n"
+	"github.com/tokmz/qi/pkg/openapi"
+	"github.com/wdcbot/qingfeng"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +22,7 @@ type Engine struct {
 	engine     *gin.Engine
 	server     *http.Server
 	translator i18n.Translator
+	registry   *openapi.Registry // nil = 未启用 OpenAPI
 }
 
 // New 创建一个新的 Engine 实例，使用 Options 模式配置
@@ -70,6 +75,11 @@ func New(opts ...Option) *Engine {
 		e.engine.Use(wrap(i18nMiddleware(t)))
 	}
 
+	// 初始化 OpenAPI registry
+	if config.OpenAPI != nil {
+		e.registry = openapi.NewRegistry(config.OpenAPI)
+	}
+
 	return e
 }
 
@@ -95,14 +105,16 @@ func (e *Engine) Use(middlewares ...HandlerFunc) {
 func (e *Engine) Group(path string, middlewares ...HandlerFunc) *RouterGroup {
 	handlers := WrapMiddlewares(middlewares...)
 	return &RouterGroup{
-		group: e.engine.Group(path, handlers...),
+		group:    e.engine.Group(path, handlers...),
+		registry: e.registry,
 	}
 }
 
 // Router 返回根路由组
 func (e *Engine) Router() *RouterGroup {
 	return &RouterGroup{
-		group: &e.engine.RouterGroup,
+		group:    &e.engine.RouterGroup,
+		registry: e.registry,
 	}
 }
 
@@ -118,6 +130,9 @@ func (e *Engine) Run(addr ...string) error {
 	if len(addr) > 0 && addr[0] != "" {
 		address = addr[0]
 	}
+
+	// 构建 OpenAPI spec 并注册端点
+	e.buildOpenAPISpec()
 
 	// 创建 HTTP Server
 	e.server = &http.Server{
@@ -140,6 +155,9 @@ func (e *Engine) Run(addr ...string) error {
 
 // RunTLS 启动 HTTPS 服务器，支持优雅关机
 func (e *Engine) RunTLS(addr, certFile, keyFile string) error {
+	// 构建 OpenAPI spec 并注册端点
+	e.buildOpenAPISpec()
+
 	// 创建 HTTP Server
 	e.server = &http.Server{
 		Addr:           addr,
@@ -157,6 +175,47 @@ func (e *Engine) RunTLS(addr, certFile, keyFile string) error {
 	return e.serve(func() error {
 		return e.server.ListenAndServeTLS(certFile, keyFile)
 	})
+}
+
+// buildOpenAPISpec 构建 OpenAPI spec 并注册端点
+func (e *Engine) buildOpenAPISpec() {
+	if e.registry == nil {
+		return
+	}
+
+	spec := e.registry.Build()
+
+	// 序列化 spec 为 JSON
+	specJSON, err := json.Marshal(spec)
+	if err != nil {
+		log.Printf("qi: failed to marshal OpenAPI spec: %v", err)
+		return
+	}
+
+	// 注册 spec 端点（直接用 gin engine，不经过 qi wrapper，避免自身被收集）
+	e.engine.GET(e.config.OpenAPI.Path, func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/json; charset=utf-8", specJSON)
+	})
+
+	// 注册 Swagger UI（使用 qingfeng）
+	if e.config.OpenAPI.SwaggerUI != "" {
+		// 临时静默 qingfeng 的 banner 输出
+		origWriter := log.Writer()
+		log.SetOutput(io.Discard)
+
+		uiCfg := qingfeng.Config{
+			Title:       e.config.OpenAPI.Title,
+			Description: e.config.OpenAPI.Description,
+			Version:     e.config.OpenAPI.Version,
+			BasePath:    e.config.OpenAPI.SwaggerUI,
+			DocJSON:     specJSON,
+			EnableDebug: true,
+		}
+		e.engine.GET(e.config.OpenAPI.SwaggerUI+"/*filepath", qingfeng.Handler(uiCfg))
+
+		// 恢复 log 输出
+		log.SetOutput(origWriter)
+	}
 }
 
 // serve 统一的服务器启动和优雅关机逻辑
