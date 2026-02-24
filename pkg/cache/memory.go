@@ -51,11 +51,11 @@ func (m *memoryCache) Get(ctx context.Context, key string, value any) error {
 
 	bytes, ok := data.([]byte)
 	if !ok {
-		return ErrCacheSerialization.WithMessage("invalid cache data type")
+		return fmt.Errorf("%w: invalid cache data type", ErrCacheSerialization)
 	}
 
 	if err := m.serializer.Unmarshal(bytes, value); err != nil {
-		return ErrCacheSerialization.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 	}
 
 	return nil
@@ -67,7 +67,7 @@ func (m *memoryCache) Set(ctx context.Context, key string, value any, ttl time.D
 
 	bytes, err := m.serializer.Marshal(value)
 	if err != nil {
-		return ErrCacheSerialization.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 	}
 
 	if ttl == 0 {
@@ -99,7 +99,7 @@ func (m *memoryCache) MGet(ctx context.Context, keys []string, values any) error
 	// 检查 values 是否为切片指针
 	rv := reflect.ValueOf(values)
 	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Slice {
-		return ErrCacheOperation.WithMessage("values must be a pointer to slice")
+		return fmt.Errorf("%w: values must be a pointer to slice", ErrCacheOperation)
 	}
 
 	slice := rv.Elem()
@@ -213,11 +213,11 @@ func (m *memoryCache) IncrBy(ctx context.Context, key string, value int64) (int6
 	if found {
 		bytes, ok := data.([]byte)
 		if !ok {
-			return 0, ErrCacheOperation.WithMessage("invalid cache data type")
+			return 0, fmt.Errorf("%w: invalid cache data type", ErrCacheOperation)
 		}
 
 		if err := m.serializer.Unmarshal(bytes, &current); err != nil {
-			return 0, ErrCacheSerialization.WithError(err)
+			return 0, fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 		}
 	}
 
@@ -227,7 +227,7 @@ func (m *memoryCache) IncrBy(ctx context.Context, key string, value int64) (int6
 	// 序列化并存储
 	bytes, err := m.serializer.Marshal(newValue)
 	if err != nil {
-		return 0, ErrCacheSerialization.WithError(err)
+		return 0, fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 	}
 
 	m.cache.Set(fullKey, bytes, m.defaultTTL)

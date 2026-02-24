@@ -2,6 +2,7 @@ package request
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -137,13 +138,13 @@ func (c *Client) execute(r *Request) (*Response, error) {
 		select {
 		case <-r.ctx.Done():
 			timer.Stop()
-			return nil, ErrTimeout.WithError(r.ctx.Err())
+			return nil, fmt.Errorf("%w: %w", ErrTimeout, r.ctx.Err())
 		case <-timer.C:
 		}
 	}
 
 	if lastErr != nil {
-		return nil, ErrMaxRetry.WithError(lastErr)
+		return nil, fmt.Errorf("%w: %w", ErrMaxRetry, lastErr)
 	}
 	return lastResp, nil
 }
@@ -168,7 +169,7 @@ func (c *Client) doOnce(r *Request) (*Response, error) {
 	// 执行 BeforeRequest 拦截器
 	for _, interceptor := range c.cfg.Interceptors {
 		if err := interceptor.BeforeRequest(httpReq.Context(), httpReq); err != nil {
-			return nil, ErrRequestFailed.WithError(err)
+			return nil, fmt.Errorf("%w: %w", ErrRequestFailed, err)
 		}
 	}
 
@@ -205,7 +206,7 @@ func (c *Client) doOnce(r *Request) (*Response, error) {
 				"error", err,
 			)
 		}
-		return nil, ErrRequestFailed.WithError(err)
+		return nil, fmt.Errorf("%w: %w", ErrRequestFailed, err)
 	}
 	defer httpResp.Body.Close()
 
@@ -223,7 +224,7 @@ func (c *Client) doOnce(r *Request) (*Response, error) {
 				"error", err,
 			)
 		}
-		return nil, ErrRequestFailed.WithError(err)
+		return nil, fmt.Errorf("%w: %w", ErrRequestFailed, err)
 	}
 
 	resp := &Response{
@@ -246,7 +247,7 @@ func (c *Client) doOnce(r *Request) (*Response, error) {
 	// 执行 AfterResponse 拦截器
 	for _, interceptor := range c.cfg.Interceptors {
 		if err := interceptor.AfterResponse(httpReq.Context(), resp); err != nil {
-			return resp, ErrRequestFailed.WithError(err)
+			return resp, fmt.Errorf("%w: %w", ErrRequestFailed, err)
 		}
 	}
 

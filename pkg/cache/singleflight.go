@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -91,7 +92,7 @@ func RememberWithLock[T any](
 	result, ok := v.(T)
 	if !ok {
 		var zero T
-		return zero, ErrCacheSerialization.WithMessage("invalid result type")
+		return zero, fmt.Errorf("%w: invalid result type", ErrCacheSerialization)
 	}
 	return result, nil
 }

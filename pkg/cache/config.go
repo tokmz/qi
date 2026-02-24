@@ -1,6 +1,9 @@
 package cache
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // DriverType 驱动类型
 type DriverType string
@@ -150,45 +153,45 @@ func WithDefaultTTL(ttl time.Duration) Option {
 func (c *Config) Validate() error {
 	// 验证驱动类型
 	if c.Driver != DriverRedis && c.Driver != DriverMemory {
-		return ErrCacheInvalidConfig.WithMessage("invalid driver type")
+		return fmt.Errorf("%w: invalid driver type", ErrCacheInvalidConfig)
 	}
 
 	// 验证序列化器
 	if c.Serializer == nil {
-		return ErrCacheInvalidConfig.WithMessage("serializer is required")
+		return fmt.Errorf("%w: serializer is required", ErrCacheInvalidConfig)
 	}
 
 	// 验证 Redis 配置
 	if c.Driver == DriverRedis {
 		if c.Redis == nil {
-			return ErrCacheInvalidConfig.WithMessage("redis config is required")
+			return fmt.Errorf("%w: redis config is required", ErrCacheInvalidConfig)
 		}
 
 		switch c.Redis.Mode {
 		case RedisStandalone:
 			if c.Redis.Addr == "" {
-				return ErrCacheInvalidConfig.WithMessage("redis addr is required for standalone mode")
+				return fmt.Errorf("%w: redis addr is required for standalone mode", ErrCacheInvalidConfig)
 			}
 		case RedisCluster:
 			if len(c.Redis.Addrs) < 3 {
-				return ErrCacheInvalidConfig.WithMessage("redis cluster requires at least 3 nodes")
+				return fmt.Errorf("%w: redis cluster requires at least 3 nodes", ErrCacheInvalidConfig)
 			}
 		case RedisSentinel:
 			if len(c.Redis.Addrs) == 0 {
-				return ErrCacheInvalidConfig.WithMessage("redis sentinel requires at least 1 sentinel node")
+				return fmt.Errorf("%w: redis sentinel requires at least 1 sentinel node", ErrCacheInvalidConfig)
 			}
 			if c.Redis.MasterName == "" {
-				return ErrCacheInvalidConfig.WithMessage("redis sentinel requires master name")
+				return fmt.Errorf("%w: redis sentinel requires master name", ErrCacheInvalidConfig)
 			}
 		default:
-			return ErrCacheInvalidConfig.WithMessage("invalid redis mode")
+			return fmt.Errorf("%w: invalid redis mode", ErrCacheInvalidConfig)
 		}
 	}
 
 	// 验证 Memory 配置
 	if c.Driver == DriverMemory {
 		if c.Memory == nil {
-			return ErrCacheInvalidConfig.WithMessage("memory config is required")
+			return fmt.Errorf("%w: memory config is required", ErrCacheInvalidConfig)
 		}
 	}
 

@@ -29,11 +29,10 @@ type Error struct {
 import "qi/pkg/errors"
 
 // 创建新错误
-err := errors.New(2001, 400, "用户名不能为空", nil)
+err := errors.New(2001, "用户名不能为空", 400)
 
-// 包装已有错误
-originalErr := someFunction()
-err := errors.New(2002, 500, "数据库操作失败", originalErr)
+// 创建默认200的业务错误
+err := errors.New(2002, "数据库操作失败")
 ```
 
 ### 使用预定义错误
@@ -129,7 +128,7 @@ import (
 
 func GetUser(id string) error {
     if id == "" {
-        return errors.New(2001, 400, "用户ID不能为空", nil)
+        return errors.New(2001, "用户ID不能为空", 400)
     }
 
     // 模拟数据库查询失败
@@ -158,7 +157,7 @@ func main() {
 
 ### 函数
 
-- `New(code int, httpCode int, message string, err error) *Error` - 创建新错误
+- `New(code int, message string, httpCode ...int) *Error` - 创建新错误，httpCode 默认 200
 - `Is(err error, target error) bool` - 检查错误类型
 - `As(err error, target any) bool` - 转换错误类型
 

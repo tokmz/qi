@@ -192,11 +192,11 @@ type GobSerializer struct{}
 ```go
 // 预定义错误
 var (
-    ErrCacheNotFound    = errors.New(3001, 404, "cache key not found", nil)
-    ErrCacheExpired     = errors.New(3002, 404, "cache key expired", nil)
-    ErrCacheConnection  = errors.New(3003, 500, "cache connection failed", nil)
-    ErrCacheSerialization = errors.New(3004, 500, "cache serialization failed", nil)
-    ErrCacheInvalidConfig = errors.New(3005, 500, "cache invalid config", nil)
+    ErrCacheNotFound    = errors.New(3001, "cache key not found", 404)
+    ErrCacheExpired     = errors.New(3002, "cache key expired", 404)
+    ErrCacheConnection  = errors.New(3003, "cache connection failed", 500)
+    ErrCacheSerialization = errors.New(3004, "cache serialization failed", 500)
+    ErrCacheInvalidConfig = errors.New(3005, "cache invalid config", 500)
 )
 ```
 

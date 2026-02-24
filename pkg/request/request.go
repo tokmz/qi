@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -84,7 +85,7 @@ func (r *Request) SetQueryParams(params map[string]string) *Request {
 func (r *Request) SetBody(body any) *Request {
 	data, err := json.Marshal(body)
 	if err != nil {
-		r.err = ErrMarshal.WithError(err)
+		r.err = fmt.Errorf("%w: %w", ErrMarshal, err)
 		return r
 	}
 	r.bodyBytes = data
@@ -173,7 +174,7 @@ func (r *Request) buildURL(baseURL string) (string, error) {
 
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", ErrInvalidURL.WithError(err)
+		return "", fmt.Errorf("%w: %w", ErrInvalidURL, err)
 	}
 
 	q := u.Query()
@@ -223,7 +224,7 @@ func (r *Request) buildHTTPRequest(baseURL string, mergedHeaders map[string]stri
 
 	req, err := http.NewRequestWithContext(r.ctx, r.method, fullURL, body)
 	if err != nil {
-		return nil, ErrRequestFailed.WithError(err)
+		return nil, fmt.Errorf("%w: %w", ErrRequestFailed, err)
 	}
 
 	// 设置请求头

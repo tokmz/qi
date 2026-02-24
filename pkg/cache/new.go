@@ -1,5 +1,7 @@
 package cache
 
+import "fmt"
+
 // New 创建缓存实例
 func New(cfg *Config) (Cache, error) {
 	if cfg == nil {
@@ -23,7 +25,7 @@ func New(cfg *Config) (Cache, error) {
 	case DriverMemory:
 		return newMemoryCache(cfg)
 	default:
-		return nil, ErrCacheInvalidConfig.WithMessage("unsupported driver type")
+		return nil, fmt.Errorf("%w: unsupported driver type", ErrCacheInvalidConfig)
 	}
 }
 

@@ -20,7 +20,7 @@ type redisCache struct {
 // newRedisCache 创建 Redis 缓存实例
 func newRedisCache(cfg *Config) (Cache, error) {
 	if cfg.Redis == nil {
-		return nil, ErrCacheInvalidConfig.WithMessage("redis config is required")
+		return nil, fmt.Errorf("%w: redis config is required", ErrCacheInvalidConfig)
 	}
 
 	var client redis.UniversalClient
@@ -44,7 +44,7 @@ func newRedisCache(cfg *Config) (Cache, error) {
 	case RedisCluster:
 		// 集群模式
 		if len(cfg.Redis.Addrs) == 0 {
-			return nil, ErrCacheInvalidConfig.WithMessage("cluster mode requires addrs")
+			return nil, fmt.Errorf("%w: cluster mode requires addrs", ErrCacheInvalidConfig)
 		}
 		client = redis.NewClusterClient(&redis.ClusterOptions{
 			Addrs:        cfg.Redis.Addrs,
@@ -61,10 +61,10 @@ func newRedisCache(cfg *Config) (Cache, error) {
 	case RedisSentinel:
 		// 哨兵模式
 		if len(cfg.Redis.Addrs) == 0 {
-			return nil, ErrCacheInvalidConfig.WithMessage("sentinel mode requires addrs")
+			return nil, fmt.Errorf("%w: sentinel mode requires addrs", ErrCacheInvalidConfig)
 		}
 		if cfg.Redis.MasterName == "" {
-			return nil, ErrCacheInvalidConfig.WithMessage("sentinel mode requires master name")
+			return nil, fmt.Errorf("%w: sentinel mode requires master name", ErrCacheInvalidConfig)
 		}
 		client = redis.NewFailoverClient(&redis.FailoverOptions{
 			MasterName:    cfg.Redis.MasterName,
@@ -81,7 +81,7 @@ func newRedisCache(cfg *Config) (Cache, error) {
 		})
 
 	default:
-		return nil, ErrCacheInvalidConfig.WithMessage(fmt.Sprintf("unsupported redis mode: %s", cfg.Redis.Mode))
+		return nil, fmt.Errorf("%w: unsupported redis mode: %s", ErrCacheInvalidConfig, cfg.Redis.Mode)
 	}
 
 	// 测试连接
@@ -89,7 +89,7 @@ func newRedisCache(cfg *Config) (Cache, error) {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, ErrCacheConnection.WithError(err)
+		return nil, fmt.Errorf("%w: %w", ErrCacheConnection, err)
 	}
 
 	return &redisCache{
@@ -117,11 +117,11 @@ func (r *redisCache) Get(ctx context.Context, key string, value any) error {
 		if err == redis.Nil {
 			return ErrCacheNotFound
 		}
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	if err := r.serializer.Unmarshal(data, value); err != nil {
-		return ErrCacheSerialization.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 	}
 
 	return nil
@@ -133,7 +133,7 @@ func (r *redisCache) Set(ctx context.Context, key string, value any, ttl time.Du
 
 	bytes, err := r.serializer.Marshal(value)
 	if err != nil {
-		return ErrCacheSerialization.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 	}
 
 	if ttl == 0 {
@@ -141,7 +141,7 @@ func (r *redisCache) Set(ctx context.Context, key string, value any, ttl time.Du
 	}
 
 	if err := r.client.Set(ctx, fullKey, bytes, ttl).Err(); err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return nil
@@ -159,7 +159,7 @@ func (r *redisCache) Delete(ctx context.Context, keys ...string) error {
 	}
 
 	if err := r.client.Del(ctx, fullKeys...).Err(); err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return nil
@@ -171,7 +171,7 @@ func (r *redisCache) Exists(ctx context.Context, key string) (bool, error) {
 
 	count, err := r.client.Exists(ctx, fullKey).Result()
 	if err != nil {
-		return false, ErrCacheOperation.WithError(err)
+		return false, fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return count > 0, nil
@@ -186,7 +186,7 @@ func (r *redisCache) MGet(ctx context.Context, keys []string, values any) error 
 	// 检查 values 是否为切片指针
 	rv := reflect.ValueOf(values)
 	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Slice {
-		return ErrCacheOperation.WithMessage("values must be a pointer to slice")
+		return fmt.Errorf("%w: values must be a pointer to slice", ErrCacheOperation)
 	}
 
 	slice := rv.Elem()
@@ -201,7 +201,7 @@ func (r *redisCache) MGet(ctx context.Context, keys []string, values any) error 
 	// 批量获取
 	results, err := r.client.MGet(ctx, fullKeys...).Result()
 	if err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	// 清空切片
@@ -249,14 +249,14 @@ func (r *redisCache) MSet(ctx context.Context, items map[string]any, ttl time.Du
 
 		bytes, err := r.serializer.Marshal(value)
 		if err != nil {
-			return ErrCacheSerialization.WithError(err)
+			return fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 		}
 
 		pipe.Set(ctx, fullKey, bytes, ttl)
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return nil
@@ -286,7 +286,7 @@ func (r *redisCache) MSetTx(ctx context.Context, items map[string]any, ttl time.
 			fullKey := r.buildKey(key)
 			bytes, err := r.serializer.Marshal(value)
 			if err != nil {
-				return ErrCacheSerialization.WithError(err)
+				return fmt.Errorf("%w: %w", ErrCacheSerialization, err)
 			}
 			pipe.Set(ctx, fullKey, bytes, ttl)
 		}
@@ -295,7 +295,7 @@ func (r *redisCache) MSetTx(ctx context.Context, items map[string]any, ttl time.
 	}, keys...)
 
 	if err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return nil
@@ -307,7 +307,7 @@ func (r *redisCache) TTL(ctx context.Context, key string) (time.Duration, error)
 
 	ttl, err := r.client.TTL(ctx, fullKey).Result()
 	if err != nil {
-		return 0, ErrCacheOperation.WithError(err)
+		return 0, fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	if ttl == -2 {
@@ -327,7 +327,7 @@ func (r *redisCache) Expire(ctx context.Context, key string, ttl time.Duration) 
 
 	ok, err := r.client.Expire(ctx, fullKey, ttl).Result()
 	if err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	if !ok {
@@ -343,7 +343,7 @@ func (r *redisCache) Incr(ctx context.Context, key string) (int64, error) {
 
 	val, err := r.client.Incr(ctx, fullKey).Result()
 	if err != nil {
-		return 0, ErrCacheOperation.WithError(err)
+		return 0, fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return val, nil
@@ -355,7 +355,7 @@ func (r *redisCache) Decr(ctx context.Context, key string) (int64, error) {
 
 	val, err := r.client.Decr(ctx, fullKey).Result()
 	if err != nil {
-		return 0, ErrCacheOperation.WithError(err)
+		return 0, fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return val, nil
@@ -367,7 +367,7 @@ func (r *redisCache) IncrBy(ctx context.Context, key string, value int64) (int64
 
 	val, err := r.client.IncrBy(ctx, fullKey, value).Result()
 	if err != nil {
-		return 0, ErrCacheOperation.WithError(err)
+		return 0, fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 
 	return val, nil
@@ -376,7 +376,7 @@ func (r *redisCache) IncrBy(ctx context.Context, key string, value int64) (int64
 // Ping 检查连接
 func (r *redisCache) Ping(ctx context.Context) error {
 	if err := r.client.Ping(ctx).Err(); err != nil {
-		return ErrCacheConnection.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheConnection, err)
 	}
 	return nil
 }
@@ -384,7 +384,7 @@ func (r *redisCache) Ping(ctx context.Context) error {
 // Close 关闭连接
 func (r *redisCache) Close() error {
 	if err := r.client.Close(); err != nil {
-		return ErrCacheOperation.WithError(err)
+		return fmt.Errorf("%w: %w", ErrCacheOperation, err)
 	}
 	return nil
 }

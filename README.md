@@ -372,7 +372,7 @@ import "qi/pkg/errors"
 return nil, errors.ErrBadRequest.WithMessage("用户名不能为空")
 
 // 自定义错误
-return nil, errors.New(2001, 403, "禁止访问", nil)
+return nil, errors.New(2001, "禁止访问", 403)
 ```
 
 ### 内置错误码
@@ -1441,11 +1441,11 @@ func (e *Error) WithError(err error) *Error
 
 // 预定义错误
 var (
-    ErrServer       = New(1000, 500, "服务器错误", nil)
-    ErrBadRequest   = New(1001, 400, "请求参数错误", nil)
-    ErrUnauthorized = New(1002, 401, "未授权", nil)
-    ErrForbidden    = New(1003, 403, "禁止访问", nil)
-    ErrNotFound     = New(1004, 404, "资源不存在", nil)
+    ErrServer       = New(1000, "服务器错误", 500)
+    ErrBadRequest   = New(1001, "请求参数错误", 400)
+    ErrUnauthorized = New(1002, "未授权", 401)
+    ErrForbidden    = New(1003, "禁止访问", 403)
+    ErrNotFound     = New(1004, "资源不存在", 404)
 )
 ```
 

@@ -1,19 +1,19 @@
 package request
 
-import "github.com/tokmz/qi/pkg/errors"
+import "errors"
 
-// 4000 段错误码 — HTTP 客户端相关
+// HTTP 客户端相关错误
 var (
 	// ErrRequestFailed 请求失败
-	ErrRequestFailed = errors.New(4001, 500, "请求失败", nil)
+	ErrRequestFailed = errors.New("请求失败")
 	// ErrTimeout 请求超时
-	ErrTimeout = errors.New(4002, 504, "请求超时", nil)
+	ErrTimeout = errors.New("请求超时")
 	// ErrMarshal 序列化失败
-	ErrMarshal = errors.New(4003, 500, "序列化失败", nil)
+	ErrMarshal = errors.New("序列化失败")
 	// ErrUnmarshal 反序列化失败
-	ErrUnmarshal = errors.New(4004, 500, "反序列化失败", nil)
+	ErrUnmarshal = errors.New("反序列化失败")
 	// ErrMaxRetry 重试次数已用尽
-	ErrMaxRetry = errors.New(4005, 502, "重试次数已用尽", nil)
+	ErrMaxRetry = errors.New("重试次数已用尽")
 	// ErrInvalidURL 无效的 URL
-	ErrInvalidURL = errors.New(4006, 400, "无效的URL", nil)
+	ErrInvalidURL = errors.New("无效的URL")
 )

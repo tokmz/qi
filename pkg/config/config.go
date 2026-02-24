@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -118,9 +119,9 @@ func (c *Config) Load() error {
 	if err := c.viper.ReadInConfig(); err != nil {
 		c.mu.Unlock()
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			return ErrConfigNotFound.WithError(err)
+			return fmt.Errorf("%w: %w", ErrConfigNotFound, err)
 		}
-		return ErrConfigReadFailed.WithError(err)
+		return fmt.Errorf("%w: %w", ErrConfigReadFailed, err)
 	}
 
 	// 保护模式下保存快照

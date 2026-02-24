@@ -133,7 +133,7 @@ func main() {
 	})
 
 	r.GET("/error/custom", func(c *qi.Context) {
-		c.RespondError(errors.New(2001, 403, "自定义错误", nil))
+		c.RespondError(errors.New(2001, "自定义错误", 403))
 	})
 
 	// ============ 分页响应示例 ============
@@ -266,7 +266,7 @@ func authMiddleware(c *qi.Context) {
 func createUserHandler(_ *qi.Context, req *CreateUserReq) (*UserResp, error) {
 	// 业务逻辑：创建用户
 	if req.Name == "admin" {
-		return nil, errors.New(2001, 403, "禁止使用保留用户名", nil)
+		return nil, errors.New(2001, "禁止使用保留用户名", 403)
 	}
 
 	return &UserResp{
@@ -279,7 +279,7 @@ func createUserHandler(_ *qi.Context, req *CreateUserReq) (*UserResp, error) {
 func deleteUserHandler(_ *qi.Context, req *DeleteUserReq) error {
 	// 业务逻辑：删除用户
 	if req.ID == 1 {
-		return errors.New(2002, 403, "禁止删除管理员账户", nil)
+		return errors.New(2002, "禁止删除管理员账户", 403)
 	}
 
 	log.Printf("User %d deleted", req.ID)

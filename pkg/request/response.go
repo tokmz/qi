@@ -2,6 +2,7 @@ package request
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -28,7 +29,7 @@ func (r *Response) IsError() bool {
 // Unmarshal JSON 反序列化到任意类型
 func (r *Response) Unmarshal(v any) error {
 	if err := json.Unmarshal(r.Body, v); err != nil {
-		return ErrUnmarshal.WithError(err)
+		return fmt.Errorf("%w: %w", ErrUnmarshal, err)
 	}
 	return nil
 }
@@ -80,7 +81,7 @@ func truncatedError(resp *Response) error {
 	if len(body) > maxErrorBodyLen {
 		body = body[:maxErrorBodyLen]
 	}
-	return ErrRequestFailed.WithMessage(
-		"HTTP " + http.StatusText(resp.StatusCode) + ": " + string(body),
+	return fmt.Errorf("%w: HTTP %s: %s", ErrRequestFailed,
+		http.StatusText(resp.StatusCode), string(body),
 	)
 }

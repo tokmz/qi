@@ -283,7 +283,7 @@ import "qi/pkg/errors"
 return nil, errors.ErrBadRequest.WithMessage("用户名不能为空")
 
 // Custom errors
-return nil, errors.New(2001, 403, "禁止访问", nil)
+return nil, errors.New(2001, "禁止访问", 403)
 ```
 
 ### i18n Translation

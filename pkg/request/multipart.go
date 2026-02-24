@@ -2,6 +2,7 @@ package request
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"os"
@@ -23,7 +24,7 @@ func buildMultipart(formData map[string]string, files []fileField) (io.Reader, s
 	// 写入表单字段
 	for k, v := range formData {
 		if err := writer.WriteField(k, v); err != nil {
-			return nil, "", ErrMarshal.WithError(err)
+			return nil, "", fmt.Errorf("%w: %w", ErrMarshal, err)
 		}
 	}
 
@@ -31,7 +32,7 @@ func buildMultipart(formData map[string]string, files []fileField) (io.Reader, s
 	for _, f := range files {
 		file, err := os.Open(f.filePath)
 		if err != nil {
-			return nil, "", ErrMarshal.WithError(err)
+			return nil, "", fmt.Errorf("%w: %w", ErrMarshal, err)
 		}
 
 		err = func() error {
@@ -46,12 +47,12 @@ func buildMultipart(formData map[string]string, files []fileField) (io.Reader, s
 			return err
 		}()
 		if err != nil {
-			return nil, "", ErrMarshal.WithError(err)
+			return nil, "", fmt.Errorf("%w: %w", ErrMarshal, err)
 		}
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, "", ErrMarshal.WithError(err)
+		return nil, "", fmt.Errorf("%w: %w", ErrMarshal, err)
 	}
 
 	return &buf, writer.FormDataContentType(), nil

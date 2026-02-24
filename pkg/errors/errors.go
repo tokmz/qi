@@ -4,8 +4,8 @@ import "errors"
 
 type Error struct {
 	Code     int    `json:"code"`    // 错误码
-	HttpCode int    `json:"-"`       // http状态码
 	Message  string `json:"message"` // 错误信息
+	HttpCode int    `json:"-"`       // http状态码
 	Err      error  `json:"-"`       // 原始错误
 }
 
@@ -21,15 +21,17 @@ func (e *Error) Unwrap() error {
 
 // New 创建新的错误
 // code 错误码
-// httpCode http状态码
 // message 错误信息
-// err 原始错误
-func New(code int, httpCode int, message string, err error) *Error {
+// httpCode 可选http状态码，默认200
+func New(code int, message string, httpCode ...int) *Error {
+	hc := 200
+	if len(httpCode) > 0 {
+		hc = httpCode[0]
+	}
 	return &Error{
 		Code:     code,
-		HttpCode: httpCode,
+		HttpCode: hc,
 		Message:  message,
-		Err:      err,
 	}
 }
 
