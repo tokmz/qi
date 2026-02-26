@@ -4,10 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/tokmz/qi/pkg/errors"
 	"github.com/tokmz/qi/pkg/logger"
-
-	"github.com/gin-gonic/gin"
 )
 
 // Context 包装 gin.Context，提供增强的 API
@@ -295,14 +294,24 @@ func (c *Context) Fail(code int, message string) {
 func (c *Context) RespondError(err error) {
 	var bizErr *errors.Error
 	if errors.As(err, &bizErr) {
-		resp := NewResponse(bizErr.Code, nil, bizErr.Message)
+		message := bizErr.Message
+		// 如果启用了 i18n，尝试翻译错误消息
+		if translator := GetContextTranslator(c); translator != nil {
+			translated := c.T(message)
+			// 如果翻译结果不等于 key，说明翻译成功
+			if translated != message {
+				message = translated
+			}
+		}
+		resp := NewResponse(bizErr.Code, nil, message)
 		c.respond(bizErr.HttpCode, resp)
 		return
 	}
 
-	// 未知错误 - 使用 ErrServer 的错误码和 HTTP 状态码，但保留原始错误信息
+	// 未知错误 - 使用 ErrServer 的错误码和 HTTP 状态码
+	// 生产环境隐藏详细错误信息，避免泄露敏感信息
 	message := errors.ErrServer.Message
-	if err != nil {
+	if err != nil && gin.Mode() == gin.DebugMode {
 		message = err.Error()
 	}
 	resp := NewResponse(errors.ErrServer.Code, nil, message)

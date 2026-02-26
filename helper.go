@@ -3,6 +3,7 @@ package qi
 import (
 	"context"
 
+	"github.com/tokmz/qi/pkg/i18n"
 	"github.com/tokmz/qi/pkg/logger"
 )
 
@@ -16,6 +17,8 @@ const (
 	ContextUidKey = "uid"
 	// ContextLanguageKey 用户语言键（用于 Gin Context）
 	ContextLanguageKey = "language"
+	// ContextTranslatorKey i18n 翻译器键（用于 Gin Context）
+	ContextTranslatorKey = "translator"
 
 	// contextKeyLanguage 用户语言键（用于标准库 context.Context，logger 包不需要）
 	contextKeyLanguage contextKey = "language"
@@ -73,4 +76,19 @@ func GetLanguageFromContext(ctx context.Context) string {
 		return lang
 	}
 	return ""
+}
+
+// GetContextTranslator 获取上下文 i18n 翻译器
+func GetContextTranslator(ctx *Context) i18n.Translator {
+	if t, exists := ctx.Get(ContextTranslatorKey); exists {
+		if translator, ok := t.(i18n.Translator); ok {
+			return translator
+		}
+	}
+	return nil
+}
+
+// SetContextTranslator 设置上下文 i18n 翻译器
+func SetContextTranslator(ctx *Context, translator i18n.Translator) {
+	ctx.Set(ContextTranslatorKey, translator)
 }

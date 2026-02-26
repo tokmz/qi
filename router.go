@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tokmz/qi/pkg/i18n"
 	"github.com/tokmz/qi/pkg/openapi"
 )
 
@@ -12,6 +13,7 @@ import (
 type RouterGroup struct {
 	group           *gin.RouterGroup
 	registry        *openapi.Registry // nil = 未启用 OpenAPI
+	translator      i18n.Translator   // nil = 未启用 i18n
 	defaultTag      string            // SetTag 设置的默认 tag
 	defaultTagDesc  string            // SetTag 设置的默认 tag 描述
 	defaultSecurity []string          // SetSecurity 设置的默认认证
@@ -21,10 +23,10 @@ type RouterGroup struct {
 
 // Group 创建子路由组
 func (rg *RouterGroup) Group(path string, middlewares ...HandlerFunc) *RouterGroup {
-	handlers := WrapMiddlewares(middlewares...)
 	return &RouterGroup{
-		group:           rg.group.Group(path, handlers...),
+		group:           rg.group.Group(path, rg.wrapMiddlewares(middlewares...)...),
 		registry:        rg.registry,
+		translator:      rg.translator,
 		defaultTag:      rg.defaultTag,
 		defaultTagDesc:  rg.defaultTagDesc,
 		defaultSecurity: rg.defaultSecurity,
@@ -33,8 +35,20 @@ func (rg *RouterGroup) Group(path string, middlewares ...HandlerFunc) *RouterGro
 
 // Use 注册中间件
 func (rg *RouterGroup) Use(middlewares ...HandlerFunc) {
-	handlers := WrapMiddlewares(middlewares...)
-	rg.group.Use(handlers...)
+	rg.group.Use(rg.wrapMiddlewares(middlewares...)...)
+}
+
+// wrapMiddlewares 将中间件转换为 gin.HandlerFunc（不包含 handler）
+func (rg *RouterGroup) wrapMiddlewares(middlewares ...HandlerFunc) []gin.HandlerFunc {
+	handlers := make([]gin.HandlerFunc, 0, len(middlewares))
+	for _, mw := range middlewares {
+		if rg.translator != nil {
+			handlers = append(handlers, wrapWithTranslator(mw, rg.translator))
+		} else {
+			handlers = append(handlers, wrap(mw))
+		}
+	}
+	return handlers
 }
 
 // SetTag 设置路由组的默认 tag 名称和描述
@@ -70,84 +84,67 @@ func (rg *RouterGroup) DocRoute(method, path string, doc *openapi.DocOption) {
 
 // ============ 基础路由方法 ============
 
+// wrapHandlers 将 qi.HandlerFunc 转换为 gin.HandlerFunc，自动注入 translator
+func (rg *RouterGroup) wrapHandlers(handler HandlerFunc, middlewares ...HandlerFunc) []gin.HandlerFunc {
+	handlers := make([]gin.HandlerFunc, 0, len(middlewares)+1)
+
+	// 转换中间件
+	for _, mw := range middlewares {
+		if rg.translator != nil {
+			handlers = append(handlers, wrapWithTranslator(mw, rg.translator))
+		} else {
+			handlers = append(handlers, wrap(mw))
+		}
+	}
+
+	// 转换处理函数
+	if rg.translator != nil {
+		handlers = append(handlers, wrapWithTranslator(handler, rg.translator))
+	} else {
+		handlers = append(handlers, wrap(handler))
+	}
+
+	return handlers
+}
+
 // GET 注册 GET 路由
 func (rg *RouterGroup) GET(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.GET(path, handlers...)
-	} else {
-		rg.group.GET(path, WrapHandler(handler))
-	}
+	rg.group.GET(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // POST 注册 POST 路由
 func (rg *RouterGroup) POST(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.POST(path, handlers...)
-	} else {
-		rg.group.POST(path, WrapHandler(handler))
-	}
+	rg.group.POST(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // PUT 注册 PUT 路由
 func (rg *RouterGroup) PUT(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.PUT(path, handlers...)
-	} else {
-		rg.group.PUT(path, WrapHandler(handler))
-	}
+	rg.group.PUT(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // DELETE 注册 DELETE 路由
 func (rg *RouterGroup) DELETE(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.DELETE(path, handlers...)
-	} else {
-		rg.group.DELETE(path, WrapHandler(handler))
-	}
+	rg.group.DELETE(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // PATCH 注册 PATCH 路由
 func (rg *RouterGroup) PATCH(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.PATCH(path, handlers...)
-	} else {
-		rg.group.PATCH(path, WrapHandler(handler))
-	}
+	rg.group.PATCH(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // HEAD 注册 HEAD 路由
 func (rg *RouterGroup) HEAD(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.HEAD(path, handlers...)
-	} else {
-		rg.group.HEAD(path, WrapHandler(handler))
-	}
+	rg.group.HEAD(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // OPTIONS 注册 OPTIONS 路由
 func (rg *RouterGroup) OPTIONS(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.OPTIONS(path, handlers...)
-	} else {
-		rg.group.OPTIONS(path, WrapHandler(handler))
-	}
+	rg.group.OPTIONS(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // Any 注册所有 HTTP 方法的路由
 func (rg *RouterGroup) Any(path string, handler HandlerFunc, middlewares ...HandlerFunc) {
-	if len(middlewares) > 0 {
-		handlers := append(WrapMiddlewares(middlewares...), WrapHandler(handler))
-		rg.group.Any(path, handlers...)
-	} else {
-		rg.group.Any(path, WrapHandler(handler))
-	}
+	rg.group.Any(path, rg.wrapHandlers(handler, middlewares...)...)
 }
 
 // ============ 静态文件服务 ============

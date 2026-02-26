@@ -72,7 +72,7 @@ func New(opts ...Option) *Engine {
 			log.Fatalf("qi: failed to init i18n: %v", err)
 		}
 		e.translator = t
-		e.engine.Use(wrap(i18nMiddleware(t)))
+		e.engine.Use(wrapWithTranslator(i18nMiddleware(t), t))
 	}
 
 	// 初始化 OpenAPI registry
@@ -95,26 +95,39 @@ func Default(opts ...Option) *Engine {
 	return e
 }
 
+// wrapHandlers 将 qi.HandlerFunc 转换为 gin.HandlerFunc，自动注入 translator
+func (e *Engine) wrapHandlers(handlers ...HandlerFunc) []gin.HandlerFunc {
+	wrapped := make([]gin.HandlerFunc, 0, len(handlers))
+	for _, h := range handlers {
+		if e.translator != nil {
+			wrapped = append(wrapped, wrapWithTranslator(h, e.translator))
+		} else {
+			wrapped = append(wrapped, wrap(h))
+		}
+	}
+	return wrapped
+}
+
 // Use 注册全局中间件
 func (e *Engine) Use(middlewares ...HandlerFunc) {
-	handlers := WrapMiddlewares(middlewares...)
-	e.engine.Use(handlers...)
+	e.engine.Use(e.wrapHandlers(middlewares...)...)
 }
 
 // Group 返回路由组
 func (e *Engine) Group(path string, middlewares ...HandlerFunc) *RouterGroup {
-	handlers := WrapMiddlewares(middlewares...)
 	return &RouterGroup{
-		group:    e.engine.Group(path, handlers...),
-		registry: e.registry,
+		group:      e.engine.Group(path, e.wrapHandlers(middlewares...)...),
+		registry:   e.registry,
+		translator: e.translator,
 	}
 }
 
 // Router 返回根路由组
 func (e *Engine) Router() *RouterGroup {
 	return &RouterGroup{
-		group:    &e.engine.RouterGroup,
-		registry: e.registry,
+		group:      &e.engine.RouterGroup,
+		registry:   e.registry,
+		translator: e.translator,
 	}
 }
 

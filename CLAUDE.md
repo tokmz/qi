@@ -82,9 +82,10 @@ Response (unified JSON format with TraceID)
   - `HandleOnly[Resp]()` - Response only (no request data)
 
 **Auto-Binding Strategy** (`autoBind` function in router.go)
-- **GET/DELETE**: `ShouldBindQuery()` + `ShouldBindUri()` (URI errors ignored)
+- **GET/DELETE**: `ShouldBindUri()` + `ShouldBindQuery()` (URI first to avoid validation blocking)
 - **POST/PUT/PATCH**: `ShouldBind()` (auto-detects Content-Type) + `ShouldBindUri()`
 - **Others**: `ShouldBind()` (fallback)
+- **Note**: URI binding errors are ignored for GET/DELETE (routes may not have URI params)
 
 ### Middleware Chain
 
@@ -428,10 +429,11 @@ qi.New(
 ## Recent Development Context
 
 Recent commits show:
+- **v1.0.8**: Fixed GET/DELETE URI parameter binding order (URI before Query to prevent validation blocking)
 - Added `pkg/request/` HTTP client package (chainable API, generics, retry, interceptors, OTel tracing)
 - Integrated i18n into framework core (`WithI18n` option, auto middleware, `Context.T()`/`Tn()`)
 - Added `pkg/i18n/` package (Translator, JSONLoader, lazy loading, plural support)
 - Enhanced generic routing with middleware support
-- Version: v1.0.7
+- Version: v1.0.8
 
 The framework is production-ready for small-to-medium Go web services that want Gin's performance with better developer experience.
