@@ -949,6 +949,435 @@ engine := qi.New()
 engine := qi.Default()
 ```
 
+## 最佳实践
+
+### 项目结构推荐
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go           # 程序入口
+├── internal/
+│   ├── handler/              # HTTP 处理器
+│   │   ├── user.go
+│   │   └── auth.go
+│   ├── service/              # 业务逻辑层
+│   │   ├── user.go
+│   │   └── auth.go
+│   ├── repository/           # 数据访问层
+│   │   ├── user.go
+│   │   └── auth.go
+│   ├── model/                # 数据模型
+│   │   └── user.go
+│   ├── middleware/           # 自定义中间件
+│   │   └── auth.go
+│   └── router/               # 路由配置
+│       └── router.go
+├── pkg/                      # 可复用的公共包
+├── config/                   # 配置文件
+├── locales/                  # 国际化翻译文件
+│   ├── zh-CN.json
+│   └── en-US.json
+└── go.mod
+```
+
+### 代码组织建议
+
+#### 1. 分层架构
+
+```go
+// Handler 层 - 处理 HTTP 请求
+func CreateUser(c *qi.Context, req *CreateUserReq) (*UserResp, error) {
+    // 调用 Service 层，传递 context.Context
+    user, err := userService.Create(c.RequestContext(), req)
+    if err != nil {
+        return nil, err
+    }
+    return &UserResp{ID: user.ID, Name: user.Name}, nil
+}
+
+// Service 层 - 业务逻辑
+func (s *UserService) Create(ctx context.Context, req *CreateUserReq) (*User, error) {
+    // 从 context 获取 TraceID、UID 等信息
+    traceID := qi.GetTraceIDFromContext(ctx)
+
+    // 业务逻辑处理
+    user := &User{Name: req.Name, Email: req.Email}
+
+    // 调用 Repository 层
+    if err := s.repo.Save(ctx, user); err != nil {
+        return nil, errors.ErrServer.WithError(err)
+    }
+    return user, nil
+}
+
+// Repository 层 - 数据访问
+func (r *UserRepository) Save(ctx context.Context, user *User) error {
+    // 数据库操作
+    return r.db.WithContext(ctx).Create(user).Error
+}
+```
+
+#### 2. 路由组织
+
+```go
+// internal/router/router.go
+func Setup(engine *qi.Engine) {
+    r := engine.Router()
+
+    // 健康检查（无需认证）
+    r.GET("/health", healthHandler)
+
+    // API v1
+    v1 := r.Group("/api/v1")
+    v1.SetTag("V1", "V1 版本接口")
+
+    // 公开接口
+    setupPublicRoutes(v1)
+
+    // 需要认证的接口
+    auth := v1.Group("")
+    auth.Use(authMiddleware)
+    auth.SetSecurity("BearerAuth")
+    setupAuthRoutes(auth)
+
+    // 管理员接口
+    admin := auth.Group("/admin")
+    admin.Use(adminMiddleware)
+    setupAdminRoutes(admin)
+}
+
+func setupPublicRoutes(rg *qi.RouterGroup) {
+    qi.POST[LoginReq, TokenResp](rg, "/login", loginHandler,
+        openapi.Doc(openapi.Summary("用户登录"), openapi.NoSecurity()),
+    )
+}
+
+func setupAuthRoutes(rg *qi.RouterGroup) {
+    qi.GETOnly[ProfileResp](rg, "/profile", profileHandler,
+        openapi.Doc(openapi.Summary("获取个人信息")),
+    )
+}
+```
+
+#### 3. 错误处理
+
+```go
+// 定义业务错误码
+var (
+    ErrInvalidUsername = errors.New(2001, "用户名格式不正确", 400)
+    ErrUserExists      = errors.New(2002, "用户已存在", 400)
+    ErrUserNotFound    = errors.New(2003, "用户不存在", 404)
+)
+
+// 在 Handler 中使用
+func CreateUser(c *qi.Context, req *CreateUserReq) (*UserResp, error) {
+    if !isValidUsername(req.Name) {
+        return nil, ErrInvalidUsername
+    }
+
+    user, err := userService.Create(c.RequestContext(), req)
+    if err != nil {
+        // Service 层已经返回了包装好的错误
+        return nil, err
+    }
+    return &UserResp{ID: user.ID}, nil
+}
+
+// 在 Service 层包装错误
+func (s *UserService) Create(ctx context.Context, req *CreateUserReq) (*User, error) {
+    exists, err := s.repo.ExistsByName(ctx, req.Name)
+    if err != nil {
+        return nil, errors.ErrServer.WithError(err)
+    }
+    if exists {
+        return nil, ErrUserExists
+    }
+    // ...
+}
+```
+
+#### 4. 中间件使用
+
+```go
+// 认证中间件
+func AuthMiddleware(c *qi.Context) {
+    token := c.GetHeader("Authorization")
+    if token == "" {
+        c.RespondError(errors.ErrUnauthorized)
+        c.Abort()
+        return
+    }
+
+    uid, err := parseToken(token)
+    if err != nil {
+        c.RespondError(errors.ErrUnauthorized.WithError(err))
+        c.Abort()
+        return
+    }
+
+    qi.SetContextUid(c, uid)
+    c.Next()
+}
+
+// 权限中间件
+func AdminMiddleware(c *qi.Context) {
+    uid := qi.GetContextUid(c)
+    if !isAdmin(uid) {
+        c.RespondError(errors.ErrForbidden)
+        c.Abort()
+        return
+    }
+    c.Next()
+}
+```
+
+#### 5. 配置管理
+
+```go
+// config/config.go
+type Config struct {
+    Server   ServerConfig
+    Database DatabaseConfig
+    Redis    RedisConfig
+    I18n     i18n.Config
+}
+
+type ServerConfig struct {
+    Mode            string
+    Addr            string
+    ReadTimeout     time.Duration
+    Wrimeout    time.Duration
+    ShutdownTimeout time.Duration
+}
+
+// 加载配置
+func Load() (*Config, error) {
+    // 从环境变量、配置文件等加载
+    return &Config{...}, nil
+}
+
+// 使用配置
+func main() {
+    cfg, err := config.Load()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    engine := qi.New(
+        qi.WithMode(cfg.Server.Mode),
+        qi.WithAddr(cfg.Server.Addr),
+        qi.WithReadTimeout(cfg.Server.ReadTimeout),
+        qi.WithWriteTimeout(cfg.Server.WriteTimeout),
+        qi.WithShutdownTimeout(cfg.Server.ShutdownTimeout),
+        qi.WithI18n(&cfg.I18n),
+    )
+}
+```
+
+### 性能优化建议
+
+#### 1. 使用连接池
+
+```go
+// HTTP 客户端连接池
+client := request.New(
+    request.WithMaxIdleConns(100),
+    request.WithMaxIdleConnsPerHost(10),
+    request.WithIdleConnTimeout(90 * time.Second),
+)
+
+// 数据库连接池
+db.SetMaxOpenConns(100)
+db.SetMaxIdleConns(10)
+db.SetConnMaxLifetime(time.Hour)
+```
+
+#### 2. 启用 Gzip 压缩
+
+```go
+import "qi/middleware"
+
+engine := qi.Default()
+engine.Use(middleware.Gzip())
+```
+
+#### 3. 使用限流保护
+
+```go
+import "qi/middleware"
+
+engine := qi.Default()
+engine.Use(middleware.RateLimiter(
+    middleware.WithRate(100),      // 每秒 100 个请求
+    middleware.WithBurst(200),     // 突发 200 个请求
+))
+```
+
+#### 4. 合理设置超时
+
+```go
+engine := qi.New(
+    qi.WithReadTimeout(10 * time.Second),
+    qi.WithWriteTimeout(10 * time.S),
+)
+
+// 请求级超时
+engine.Use(middleware.Timeout(5 * time.Second))
+```
+
+### 安全建议
+
+#### 1. 启用 CORS
+
+```go
+import "qi/middleware"
+
+engine := qi.Default()
+engine.Use(middleware.CORS(
+    middleware.WithAllowOrigins("https://example.com"),
+    middleware.WithAllowMethods("GET", "POST", "PUT", "DELETE"),
+    middleware.WithAllowHeaders("Authorization", "Content-Type"),
+))
+```
+
+#### 2. 设置信任代理
+
+```go
+engine := qi.New(
+    qi.WithTrustedProxies("127.0.0.1", "10.0.0.0/8"),
+)
+```
+
+#### 3. 输入验证
+
+```go
+type CreateUserReq struct {
+    Name     string `json:"name" binding:"required,min=3,max=20"   Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required,min=8"`
+    Age      int    `json:"age" binding:"required,min=18,max=120"`
+}
+```
+
+#### 4. 敏感信息脱敏
+
+```go
+type UserResp struct {
+    ID       int64  `json:"id"`
+    Name     string `json:"name"`
+    Email    string `json:"email"`
+    Password string `json:"-"` // 不返回密码
+}
+```
+
+### 测试建议
+
+#### 1. Handler 测试
+
+```go
+func TestCreateUser(t *testing.T) {
+    // 创建测试 Context
+    w := httptest.NewRecorder()
+    ginCtx, _ := gin.CreateTestContext(w)
+    c := qi.NewContext(ginCtx)
+
+    // 准备请求
+    req := &CreateUserReq{Name: "test", Email: "test@example.com"}
+
+    // 调用 Handler
+    resp, err := CreateUser(c, req)
+
+    // 断言
+    assert.NoError(t, err)
+    assert.NotNil(t, resp)
+    assert.Equal(t, "test", resp.Name)
+}
+```
+
+#### 2. 集成测试
+
+```go
+func TestUserAPI(t *testing.T) {
+    // 创建测试服务器
+    engine := qi.Default()
+    router.Setup(engine)
+
+    ts := httptest.NewServer(engine.Handler())
+    defer ts.Close()
+
+    // 发送请求
+    client := request.New(request.WithBaseURL(ts.URL))
+    resp, err := client.Post("/api/v1/users").
+        SetBody(&CreateUserReq{Name: "test"}).
+        Do()
+
+    // 断言
+    assert.NoError(t, err)
+    assert.Equal(t, 200, resp.StatusCode)
+}
+```
+
+### 部署建议
+
+#### 1. 生产环境配置
+
+```go
+engine := qi.New(
+    qi.WithMode(gin.ReleaseMode),
+    qi.WithAddr(":8080"),
+    qi.WithReadTimeout(15 * time.Second),
+    qi.WithWriteTimeout(15 * time.Second),
+    qi.WithShutdownTimeout(30 * time.Second),
+    qi.WithBeforeShutdown(func() {
+        // 关闭数据库连接
+        db.Close()
+        // 关闭 Redis 连接
+        redis.Close()
+    }),
+)
+```
+
+#### 2. Docker 部署
+
+```dockerfile
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o server cmd/server/main.go
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+COPY --from=builder /app/server .
+COPY --from=builder /app/locales ./locales
+EXPOSE 8080
+CMD ["./server"]
+```
+
+#### 3. 健康检查
+
+```go
+r.GET("/health", func(c *qi.Context) {
+    // 检查数据库连接
+    if err := db.Ping(); err != nil {
+        c.Fail(500, "database unavailable")
+        return
+    }
+
+    // 检查 Redis 连接
+    if err := redis.Ping(); err != nil {
+        c.Fail(500, "redis unavailable")
+        return
+    }
+
+    c.Success(map[string]string{
+        "status": "ok",
+        "version": "1.0.0",
+    })
+})
+```
+
 ## API 参考
 
 ### Engine API
@@ -986,6 +1415,9 @@ func (e *Engine) RunTLS(addr, certFile, keyFile string) error
 
 // Shutdown 手动关闭服务器
 func (e *Engine) Shutdown(ctx context.Context) error
+
+// Handler 返回底层的 http.Handler（用于测试）
+func (e *Engine) Handler() http.Handler
 ```
 
 ### RouterGroup API
@@ -1417,9 +1849,7 @@ const (
 )
 ```
 
-### 错误处理 API
-
-详见 `pkg/errors/` 包文档。
+### 错误处理 API (`pkg/errors`)
 
 ```go
 // Error 自定义错误类型
@@ -1431,13 +1861,19 @@ type Error struct {
 }
 
 // New 创建自定义错误
-func New(code int, httpCode int, message string, err error) *Error
+func New(code int, message string, httpCode int) *Error
 
-// WithMessage 设置错误消息
+// WithMessage 设置错误消息（支持 i18n key）
 func (e *Error) WithMessage(message string) *Error
 
-// WithEor 包装原始错误
+// WithError 包装原始错误
 func (e *Error) WithError(err error) *Error
+
+// Error 实现 error 接口
+func (e *Error) Error() string
+
+// Unwrap 支持 errors.Unwrap
+func (e *Error) Unwrap() error
 
 // 预定义错误
 var (
@@ -1447,6 +1883,280 @@ var (
     ErrForbidden    = New(1003, "禁止访问", 403)
     ErrNotFound     = New(1004, "资源不存在", 404)
 )
+```
+
+### 国际化 API (`pkg/i18n`)
+
+```go
+// Translator 翻译器接口
+type Translator interface {
+    // Translate 翻译指定语言的 key
+    Translate(lang, key string, args ...any) string
+    // TranslatePlural 翻译复数形式
+    TranslatePlural(lang, key, plural string, n int, args ...any) string
+    // Preload 预加载指定语言的翻译文件
+    Preload(lang string) error
+    // HasKey 检查 key 是否存在
+    HasKey(lang, key string) bool
+}
+
+// Config i18n 配置
+type Config struct {
+    Dir             string   // 翻译文件目录
+    DefaultLanguage string   // 默认语言
+    Languages       []string // 支持的语言列表
+}
+
+// New 创建翻译器实例
+func New(cfg *Config) (Translator, error)
+
+// Context 辅助函数
+func GetContextLanguage(c *qi.Context) string
+func SetContextLanguage(c *qi.Context, lang string)
+```
+
+### HTTP 客户端 API (`pkg/request`)
+
+#### Client
+
+```go
+// New 创建 HTTP 客户端
+func New(opts ...Option) *Client
+
+// NewWithConfig 使用配置创建客户端
+func NewWithConfig(cfg *Config) *Client
+
+// HTTP 方法
+func (c *Client) Get(path string) *Request
+func (c *Client) Post(path string) *Request
+func (c *Client) Put(path string) *Request
+func (c *Client) Delete(path string) *Request
+func (c *Client) Patch(path string) *Request
+func (c *Client) Head(path string) *Request
+func (c *Client) Options(path string) *Request
+```
+
+#### Request
+
+```go
+// 请求配置
+func (r *Request) SetHeader(key, value string) *Request
+func (r *Request) SetHeaders(headers map[string]string) *Request
+func (r *Request) SetQuery(key, value string) *Request
+func (r *Request) SetQueries(queries map[string]string) *Request
+func (r *Request) SetBody(body any) *Request
+func (r *Request) SetRawBody(body io.Reader) *Request
+func (r *Request) SetTimeout(timeout time.Duration) *Request
+func (r *Request) SetContext(ctx context.Context) *Request
+
+// 认证
+func (r *Request) SetBearerToken(token string) *Request
+func (r *Request) SetBasicAuth(username, password string) *Request
+
+// 文件上传
+func (r *Request) SetFile(fieldName, filePath string) *Request
+func (r *Request) SetFiles(files map[string]string) *Request
+func (r *Request) SetFormData(data map[string]string) *Request
+
+// 重试配置
+func (r *Request) SetRetry(cfg *RetryConfig) *Request
+
+// 执行请求
+func (r *Request) Do() (*Response, error)
+
+// 泛型响应解析
+func Do[T any](req *Request) (*T, error)
+func DoList[T any](req *Request) ([]T, error)
+```
+
+#### Response
+
+```go
+type Response struct {
+    StatusCode int           // HTTP 状态码
+    Headers    http.Header   // 响应头
+    Body       []byte        // 响应体
+    Duration   time.Duration // 请求耗时
+}
+
+// 状态检查
+func (r *Response) IsSuccess() bool // 2xx
+func (r *Response) IsError() bool   // 4xx/5xx
+
+// 响应处理
+func (r *Response) String() string
+func (r *Response) Unmarshal(v any) error
+```
+
+#### 配置选项
+
+```go
+// 基础配置
+func WithBaseURL(baseURL string) Option
+func WithTimeout(timeout time.Duration) Option
+func WithHeader(key, value string) Option
+func WithHeaders(headers map[string]string) Option
+
+// 连接池配置
+func WithMaxIdleConns(n int) Option
+func WithMaxIdleConnsPerHost(n int) Option
+func WithMaxConnsPerHost(n int) Option
+func WithIdleConnTimeout(timeout time.Duration) Option
+
+// 安全配置
+func WithInsecureSkipVerify(skip bool) Option
+func WithTransport(transport http.RoundTripper) Option
+
+// 功能配置
+func WithRetry(cfg *RetryConfig) Option
+func WithInterceptor(interceptor Interceptor) Option
+func WithLogger(logger Logger) Option
+func WithTracing(enabled bool) Option
+```
+
+#### 重试配置
+
+```go
+type RetryConfig struct {
+    MaxAttempts  int           // 最大重试次数
+    InitialDelay time.Duration // 初始退避时间
+    MaxDelay     time.Duration // 最大退避时间
+    Multiplier   float64       // 退避倍数
+    RetryIf      func(*http.Response, error) bool // 重试条件
+}
+```
+
+#### 拦截器
+
+```go
+type Interceptor interface {
+    BeforeRequest(ctx context.Context, req *http.Request) error
+    AfterResponse(ctx context.Context, resp *Response) error
+}
+
+// 内置拦截器
+func NewLoggingInterceptor(logger Logger) Interceptor
+func NewAuthInterceptor(tokenFunc func() string) Interceptor
+```
+
+#### 日志接口
+
+```go
+type Logger interface {
+    InfoContext(ctx context.Context, msg string, keysAndValues ...any)
+    ErrorContext(ctx context.Context, msg string, keysAndValues ...any)
+}
+```
+
+### OpenAPI API (`pkg/openapi`)
+
+```go
+// Config OpenAPI 配置
+type Config struct {
+    Title           string                      // API 标题
+    Version         string                      // API 版本
+    Description     string                      // API 描述
+    Path            string                      // OpenAPI spec 路径
+    SwaggerUI       string                      // Swagger UI 路径
+    SecuritySchemes map[string]SecurityScheme   // 安全方案定义
+}
+
+// SecurityScheme 安全方案
+type SecurityScheme struct {
+    Type         string // http, apiKey, oauth2, openIdConnect
+    Scheme       string // bearer, basic (仅 http 类型)
+    BearerFormat string // JWT, etc (可选)
+    In           string // header, query, cookie (仅 apiKey 类型)
+    Name         string // 参数名 (仅 apiKey 类型)
+}
+
+// DocOption 文档选项
+type DocOption struct {
+    Summary      string
+    Description  string
+    Tags         []string
+    Security     []string
+    NoSecurity   bool
+    Deprecated   bool
+    RequestType  any
+    ResponseType any
+}
+
+// Doc 创建文档选项
+func Doc(opts ...DocOptionFunc) *DocOption
+
+// 文档选项函数
+func Summary(summary string) DocOptionFunc
+func Desc(description string) DocOptionFunc
+func Tags(tags ...string) DocOptionFunc
+func Security(schemes ...string) DocOptionFunc
+func NoSecurity() DocOptionFunc
+func Deprecated() DocOptionFunc
+func RequestType(t any) DocOptionFunc
+func ResponseType(t any) DocOptionFunc
+```
+
+### 中间件 API (`middleware`)
+
+#### Tracing
+
+```go
+// Tracing 创建 OpenTelemetry 链路追踪中间件
+func Tracing(opts ...TracingOption) qi.HandlerFunc
+
+// 配置选项
+func WithTracerProvider(provider trace.TracerProvider) TracingOption
+func WithPropagator(propagator propagation.TextMapPropagator) TracingOption
+func WithSpanNameFormatter(formatter func(*qi.Context) string) TracingOption
+```
+
+#### CORS
+
+```go
+// CORS 创建跨域资源共享中间件
+func CORS(opts ...CORSOption) qi.HandlerFunc
+
+// 配置选项
+func WithAllowOrigins(origins ...string) CORSOption
+func WithAllowMethods(methods ...string) CORSOption
+func WithAllowHeaders(headers ...string) CORSOption
+func WithExposeHeaders(headers ...string) CORSOption
+func WithAllowCredentials(allow bool) CORSOption
+func WithMaxAge(age time.Duration) CORSOption
+```
+
+#### RateLimiter
+
+```go
+// RateLimiter 创建令牌桶限流中间件
+func RateLimiter(opts ...RateLimiterOption) qi.HandlerFunc
+
+// 配置选项
+func WithRate(rate float64) RateLimiterOption
+func WithBurst(burst int) RateLimiterOption
+func WithKeyFunc(fn func(*qi.Context) string) RateLimiterOption
+```
+
+#### Timeout
+
+```go
+// Timeout 创建请求超时控制中间件
+func Timeout(timeout time.Duration, opts ...TimeoutOption) qi.HandlerFunc
+
+// 配置选项
+func WithTimeoutHandler(handler qi.HandlerFunc) TimeoutOption
+```
+
+#### Gzip
+
+```go
+// Gzip 创建响应压缩中间件
+func Gzip(opts ...GzipOption) qi.HandlerFunc
+
+// 配置选项
+func WithGzipLevel(level int) GzipOption
+func WithExcludedExtensions(exts ...string) GzipOption
+func WithExcludedPaths(paths ...string) GzipOption
 ```
 
 ## License
