@@ -231,7 +231,14 @@ items, err := request.DoList[Item](client.Get("/items"))
    - Engine auto-initializes translator and registers language detection middleware
    - Language detection priority: `Query(lang)` > `X-Language` header > `Accept-Language` header > default
    - `Context.T()`/`Tn()` for direct translation in handlers
+   - **Auto-translation in error responses**: `RespondError()` automatically translates i18n keys in error messages
    - Falls back to returning key when i18n is not enabled
+
+8. **Automatic Translator Injection**
+   - Translator automatically injected into all routes and middlewares
+   - No manual middleware registration needed
+   - Available in Context via `GetContextTranslator()`
+   - Seamless integration with error handling system
 
 ## Common Patterns
 
@@ -285,6 +292,22 @@ return nil, errors.ErrBadRequest.WithMessage("用户名不能为空")
 
 // Custom errors
 return nil, errors.New(2001, "禁止访问", 403)
+```
+
+### Error Handling with i18n
+```go
+// Define error messages in locales/zh-CN.json
+{
+  "error.invalid_username": "用户名格式不正确",
+  "error.user_not_found": "用户不存在"
+}
+
+// Use i18n key in error message
+return nil, errors.ErrBadRequest.WithMessage("error.invalid_username")
+
+// RespondError automatically translates based on request language
+// Chinese request: {"code": 1001, "message": "用户名格式不正确"}
+// English request: {"code": 1001, "message": "Invalid username format"}
 ```
 
 ### i18n Translation
@@ -429,11 +452,12 @@ qi.New(
 ## Recent Development Context
 
 Recent commits show:
+- **v1.0.9**: 实现 i18n 错误消息自动翻译 + 代码重构优化（消除代码重复，提升安全性和性能）
 - **v1.0.8**: Fixed GET/DELETE URI parameter binding order (URI before Query to prevent validation blocking)
 - Added `pkg/request/` HTTP client package (chainable API, generics, retry, interceptors, OTel tracing)
 - Integrated i18n into framework core (`WithI18n` option, auto middleware, `Context.T()`/`Tn()`)
 - Added `pkg/i18n/` package (Translator, JSONLoader, lazy loading, plural support)
 - Enhanced generic routing with middleware support
-- Version: v1.0.8
+- Version: v1.0.9
 
 The framework is production-ready for small-to-medium Go web services that want Gin's performance with better developer experience.
