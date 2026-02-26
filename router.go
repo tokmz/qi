@@ -227,13 +227,13 @@ func HandleOnly[Resp any](register RouteRegister, path string, handler func(*Con
 func autoBind(c *Context, obj any) error {
 	method := c.Request().Method
 
-	// GET/DELETE: Query + URI
+	// GET/DELETE: URI + Query（先绑定 URI，再绑定 Query）
 	if method == "GET" || method == "DELETE" {
+		// URI 绑定失败不阻断（路由可能没有 URI 参数）
+		_ = c.ShouldBindUri(obj)
 		if err := c.ShouldBindQuery(obj); err != nil {
 			return c.wrapBindError(err)
 		}
-		// URI 绑定失败不阻断（路由可能没有 URI 参数）
-		_ = c.ShouldBindUri(obj)
 		return nil
 	}
 
