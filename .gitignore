@@ -1,0 +1,21 @@
+.idea/
+
+# Go build outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.coverprofile
+coverage.out
+
+# Local environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+
+.claude
