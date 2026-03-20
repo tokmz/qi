@@ -2,11 +2,4 @@ go 1.25.3
 
 use (
 	.
-	./pkg/cache
-	./pkg/database
-	./pkg/logger
-	./pkg/tracing
-	./pkg/errors
-	./pkg/middleware
-	./pkg/config
 )
