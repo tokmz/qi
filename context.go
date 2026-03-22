@@ -301,28 +301,43 @@ func (c *Context) Cookie(key string) (string, error) {
 
 // ===== 响应处理 =====
 
+// traceID 从 gin.Context 中提取 trace_id
+func (c *Context) traceID() string {
+	if v, ok := c.ctx.Get("trace_id"); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// respond 统一响应，自动填充 trace_id
+func (c *Context) respond(status int, code int, msg string, data any) {
+	resp := NewResponse(code, msg, data)
+	if tid := c.traceID(); tid != "" {
+		resp.TraceID = tid
+	}
+	c.ctx.JSON(status, resp)
+}
+
 // Header 设置响应头
-// 示例：c.Header("key", "value")
 func (c *Context) Header(key, value string) {
 	c.ctx.Header(key, value)
 }
 
-// JSON 响应 JSON 数据
-// 示例：c.JSON(http.StatusOK, map[string]string{"key": "value"})
+// JSON 响应 JSON 数据（原样输出，不经过 Response 封装）
 func (c *Context) JSON(status int, data any) {
 	c.ctx.JSON(status, data)
 }
 
 // OK 成功响应，code=0
-// 示例：c.OK(user)
-func (c *Context) OK(data any) {
-	c.ctx.JSON(http.StatusOK, NewResponse(0, "success", data))
-}
-
-// OKWithMsg 成功响应，自定义消息
-// 示例：c.OKWithMsg("创建成功", user)
-func (c *Context) OKWithMsg(msg string, data any) {
-	c.ctx.JSON(http.StatusOK, NewResponse(0, msg, data))
+// 示例：c.OK(user) 或 c.OK(user, "创建成功")
+func (c *Context) OK(data any, msg ...string) {
+	m := "success"
+	if len(msg) > 0 {
+		m = msg[0]
+	}
+	c.respond(http.StatusOK, 0, m, data)
 }
 
 // Fail 错误响应，自动从 *errors.Error 提取 code/status/message
@@ -334,18 +349,17 @@ func (c *Context) Fail(err error) {
 	}
 	code := errors.GetCode(err)
 	if code == -1 {
-		// 非 qi Error，降级为服务器错误
-		c.ctx.JSON(http.StatusInternalServerError, NewResponse(ErrServer.Code, ErrServer.Message, nil))
+		c.respond(http.StatusInternalServerError, ErrServer.Code, ErrServer.Message, nil)
 		return
 	}
 	status := errors.GetStatus(err)
-	c.ctx.JSON(status, NewResponse(code, err.Error(), nil))
+	c.respond(status, code, err.Error(), nil)
 }
 
 // FailWithCode 自定义 code 的错误响应
 // 示例：c.FailWithCode(http.StatusBadRequest, 10001, "参数错误")
 func (c *Context) FailWithCode(status, code int, msg string) {
-	c.ctx.JSON(status, NewResponse(code, msg, nil))
+	c.respond(status, code, msg, nil)
 }
 
 // Page 分页响应
