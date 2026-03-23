@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tokmz/qi/internal/openapi"
+	itrace "github.com/tokmz/qi/internal/tracing"
 	"github.com/wdcbot/qingfeng"
 )
 
@@ -25,12 +26,13 @@ var Version = "dev"
 
 // Engine 是 qi 的 HTTP 入口，负责路由注册和底层 gin.Engine 持有。
 type Engine struct {
-	engine *gin.Engine      // 底层 gin.Engine
-	server *http.Server     // 底层 http.Server
-	router *routerStore     // 路由存储
-	api    *openapi.Manager // OpenAPI 文档管理器（可选）
-	cfg    *Config
-	mode   string // 运行模式，用于调试输出
+	engine          *gin.Engine      // 底层 gin.Engine
+	server          *http.Server     // 底层 http.Server
+	router          *routerStore     // 路由存储
+	api             *openapi.Manager // OpenAPI 文档管理器（可选）
+	cfg             *Config
+	mode            string                      // 运行模式
+	tracingShutdown func(context.Context) error  // 链路追踪关闭函数
 }
 
 // Config 定义 Engine 的常用运行配置。
@@ -46,7 +48,8 @@ type Config struct {
 	ShutdownTimeout time.Duration // 关闭超时时间
 	ShutdownSignals []os.Signal   // 关闭信号
 
-	openAPIConfig *OpenAPIConfig // OpenAPI 配置（未导出）
+	openAPIConfig *OpenAPIConfig  // OpenAPI 配置（未导出）
+	tracingConfig *TracingConfig  // 链路追踪配置（未导出）
 }
 
 type Option func(*Config)
@@ -124,12 +127,27 @@ func New(opts ...Option) *Engine {
 		e.api = openapi.New(opts...)
 	}
 
+	// 初始化链路追踪并自动注册中间件
+	if cfg.tracingConfig != nil {
+		shutdown, err := itrace.Init(cfg.tracingConfig)
+		if err != nil {
+			panic("qi: tracing init failed: " + err.Error())
+		}
+		e.tracingShutdown = shutdown
+		e.engine.Use(itrace.Middleware(cfg.tracingConfig))
+	}
+
 	return e
 }
 
 // Use 为整个应用添加中间件。
 func (e *Engine) Use(handlers ...HandlerFunc) {
 	e.engine.Use(toGinHandlers(handlers)...)
+}
+
+// ServeHTTP 实现 http.Handler，便于测试和作为上层路由的子处理器使用。
+func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	e.engine.ServeHTTP(w, r)
 }
 
 // Group 创建一个路由分组。
@@ -220,6 +238,11 @@ func (e *Engine) Run() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), e.cfg.ShutdownTimeout)
 	defer cancel()
+
+	// flush span 数据后再关闭 HTTP server
+	if e.tracingShutdown != nil {
+		_ = e.tracingShutdown(ctx)
+	}
 
 	return e.server.Shutdown(ctx)
 }
