@@ -19,7 +19,3 @@ coverage.out
 .DS_Store
 
 .claude
-examples/
-internal/i18n
-pkg/middleware/i18n.go
-pkg/middleware/i18n_test.go
