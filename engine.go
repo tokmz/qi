@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ilogging "github.com/tokmz/qi/internal/logging"
 	"github.com/tokmz/qi/internal/openapi"
 	itrace "github.com/tokmz/qi/internal/tracing"
 	"github.com/wdcbot/qingfeng"
@@ -32,7 +33,7 @@ type Engine struct {
 	api             *openapi.Manager // OpenAPI 文档管理器（可选）
 	cfg             *Config
 	mode            string                      // 运行模式
-	tracingShutdown func(context.Context) error  // 链路追踪关闭函数
+	tracingShutdown func(context.Context) error // 链路追踪关闭函数
 }
 
 // Config 定义 Engine 的常用运行配置。
@@ -48,8 +49,9 @@ type Config struct {
 	ShutdownTimeout time.Duration // 关闭超时时间
 	ShutdownSignals []os.Signal   // 关闭信号
 
-	openAPIConfig *OpenAPIConfig  // OpenAPI 配置（未导出）
-	tracingConfig *TracingConfig  // 链路追踪配置（未导出）
+	openAPIConfig *OpenAPIConfig // OpenAPI 配置（未导出）
+	tracingConfig *TracingConfig // 链路追踪配置（未导出）
+	loggerConfig  *LoggerConfig  // 日志中间件配置（未导出）
 }
 
 type Option func(*Config)
@@ -125,6 +127,14 @@ func New(opts ...Option) *Engine {
 			opts = append(opts, openapi.WithServers(cfg.openAPIConfig.Servers...))
 		}
 		e.api = openapi.New(opts...)
+	}
+
+	// 注册日志中间件
+	if cfg.loggerConfig != nil {
+		e.engine.Use(ilogging.Middleware(&ilogging.Config{
+			Output:    cfg.loggerConfig.Output,
+			SkipPaths: cfg.loggerConfig.SkipPaths,
+		}))
 	}
 
 	// 初始化链路追踪并自动注册中间件
@@ -339,10 +349,10 @@ func (e *Engine) printBanner() {
 	// Banner 左侧 + 右侧介绍
 	bannerLines := []struct{ art, info string }{
 		{" ██████╗ ██╗", "Qi 基于Gin的Go Web 框架"},
-		{"██╔═══██╗██║", "github: https://github.com/tokmz/qi"},
-		{"██║   ██║██║", "open: " + openURL},
-		{"██║▄▄ ██║██║", "version: " + Version},
-		{"╚██████╔╝██║", ""},
+		{"██╔═══██╗██║", "QQ: 81288369"},
+		{"██║   ██║██║", "github: https://github.com/tokmz/qi"},
+		{"██║▄▄ ██║██║", "open: " + openURL},
+		{"╚██████╔╝██║", "version: " + Version},
 		{" ╚══▀▀═╝ ╚═╝", ""},
 	}
 
