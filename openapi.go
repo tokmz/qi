@@ -77,6 +77,9 @@ func isBodyMethod(method string) bool {
 // OpenAPIOption 是 OpenAPI 配置选项类型，包装 internal/openapi.Option。
 type OpenAPIOption = openapi.Option
 
+// Server 是 OpenAPI 服务器信息，透传自 internal/openapi.Server。
+type Server = openapi.Server
+
 // OpenAPIConfig 定义 OpenAPI 文档的配置。
 type OpenAPIConfig struct {
 	Title       string           // API 标题，默认 "OpenAPI"
@@ -84,7 +87,7 @@ type OpenAPIConfig struct {
 	Description string           // API 描述
 	Path        string           // spec 端点路径，默认 "/openapi.json"
 	SwaggerUI   string           // Swagger UI 路径，空字符串=不注册
-	Servers     []openapi.Server // 服务器列表
+	Servers     []Server           // 服务器列表
 }
 
 // normalize 填充默认值。

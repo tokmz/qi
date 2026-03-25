@@ -69,7 +69,7 @@ func New(cfg *Config) (*gorm.DB, error) {
 
 	// 注册链路追踪插件
 	if cfg.TracingEnabled {
-		opts := []TracingOption{}
+		var opts []TracingOption
 		if cfg.EnableSQLTrace {
 			opts = append(opts, WithSQLTrace(true))
 		}
