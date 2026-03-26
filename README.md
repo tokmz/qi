@@ -52,7 +52,7 @@ func main() {
 |------|------|
 | **统一响应封装** | 所有响应走同一 JSON 结构，自动填充 `trace_id` |
 | **业务错误系统** | 预定义错误码，不可变克隆链，Code + HTTP Status 分离 |
-| **泛型请求绑定** | `Bind` / `BindR` 自动完成请求绑定 + 响应包装，请求路径零反射 |
+| **泛型请求绑定** | `Bind` / `BindR` / `BindE` / `BindRE` 自动完成请求绑定 + 响应包装，请求路径零反射 |
 | **OpenAPI 3.0** | 基于类型反射，注册路由时同步生成文档，内置 Swagger UI |
 | **请求日志** | 基于 zap，记录方法/路径/状态码/耗时/IP/trace_id |
 | **链路追踪** | 集成 OpenTelemetry，支持 OTLP gRPC/HTTP，自动注入 `trace_id` |
@@ -137,6 +137,16 @@ func createUser(c *qi.Context, req *CreateUserReq) (*User, error) {
 
 // BindR[Resp]：无请求体，只包装响应
 app.GET("/users", qi.BindR[[]User](listUsers))
+
+// BindE[Req]：有请求体，无响应体（如 DELETE）
+app.DELETE("/users/:id", qi.BindE[DeleteUserReq](deleteUser))
+
+func deleteUser(c *qi.Context, req *DeleteUserReq) error {
+    return service.Delete(req.ID)
+}
+
+// BindRE：无请求体，无响应体
+app.POST("/cache/flush", qi.BindRE(clearCache))
 ```
 
 ---
@@ -301,7 +311,7 @@ qi/
 ├── context.go             Context 封装、绑定、响应方法
 ├── handler.go             HandlerFunc 类型定义、gin 适配器
 ├── router.go              RouterGroup、routerStore、路由注册
-├── binding.go             Bind/BindR 泛型请求绑定
+├── binding.go             Bind/BindR/BindE/BindRE 泛型请求绑定
 ├── openapi.go             OpenAPIConfig、RouteBuilder、OpenAPI 集成
 ├── tracing.go             TracingConfig 类型别名、WithTracing option
 ├── logger.go              LoggerConfig、WithLogger option

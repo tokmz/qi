@@ -75,9 +75,45 @@ v1.API().
     Done()
 ```
 
-### 1.3 含路径参数 — URI 绑定
+### 1.3 有请求体、无响应体 — `qi.BindE[Req]`
 
-请求结构体含 `uri` tag 时，`Bind` 自动调用 `BindURI`。
+适用于 DELETE / 无需返回数据的操作，handler 签名为 `func(*qi.Context, *Req) error`。
+
+```go
+type DeleteUserReq struct {
+    ID string `uri:"id" binding:"required" desc:"用户ID" example:"u-123"`
+}
+
+func deleteUser(c *qi.Context, req *DeleteUserReq) error {
+    return service.Delete(req.ID)
+}
+
+auth.API().
+    DELETE("/users/:id", qi.BindE(deleteUser)).
+    Summary("删除用户").
+    Tags("用户").
+    Done()
+```
+
+### 1.4 无请求体、无响应体 — `qi.BindRE`
+
+handler 签名为 `func(*qi.Context) error`。
+
+```go
+func clearCache(c *qi.Context) error {
+    return cache.Flush(c.Request().Context())
+}
+
+auth.API().
+    POST("/cache/flush", qi.BindRE(clearCache)).
+    Summary("清空缓存").
+    Tags("运维").
+    Done()
+```
+
+### 1.5 含路径参数 — URI 绑定
+
+请求结构体含 `uri` tag 时，`Bind`/`BindE` 自动调用 `BindURI`。
 
 ```go
 type GetUserReq struct {
@@ -94,7 +130,7 @@ v1.API().
     Summary("用户详情").Tags("用户").Done()
 ```
 
-### 1.4 普通 HandlerFunc（无 OpenAPI 类型推导）
+### 1.6 普通 HandlerFunc（无 OpenAPI 类型推导）
 
 ```go
 app.DELETE("/users/:id", func(c *qi.Context) {
@@ -118,7 +154,16 @@ app.DELETE("/users/:id", func(c *qi.Context) {
 | `c.Fail(err)` | 失败，从 `errors.Error` 提取 code/status |
 | `c.JSON(status, obj)` | 原始 JSON |
 
-使用 `Bind`/`BindR` 时，框架自动处理响应，handler 只需 `return resp, err`。
+使用 `Bind`/`BindR`/`BindE`/`BindRE` 时，框架自动处理响应，handler 只需 `return resp, err` 或 `return err`。
+
+### handler 组合一览
+
+| 函数 | 请求体 | 响应体 | handler 签名 |
+|------|--------|--------|-------------|
+| `Bind[Req, Resp]` | ✓ | ✓ | `func(*Context, *Req) (*Resp, error)` |
+| `BindR[Resp]` | ✗ | ✓ | `func(*Context) (*Resp, error)` |
+| `BindE[Req]` | ✓ | ✗ | `func(*Context, *Req) error` |
+| `BindRE` | ✗ | ✗ | `func(*Context) error` |
 
 ---
 
