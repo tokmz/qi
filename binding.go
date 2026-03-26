@@ -80,6 +80,65 @@ func BindR[Resp any](fn func(*Context) (*Resp, error)) BoundHandler {
 	}
 }
 
+// BindE 将 func(*Context, *Req) error 包装为 BoundHandler。
+// 适用于无需返回响应体的场景（如 DELETE），成功时自动返回 c.OK(nil)。
+func BindE[Req any](fn func(*Context, *Req) error) BoundHandler {
+	reqType := reflect.TypeFor[Req]()
+	hasURITag := typeHasTag(reqType, "uri")
+
+	handler := func(c *Context) {
+		req := new(Req)
+
+		if isBodyMethod(c.Request().Method) {
+			if err := c.Bind(req); err != nil {
+				return
+			}
+		} else {
+			if err := c.BindQuery(req); err != nil {
+				return
+			}
+		}
+
+		if hasURITag {
+			if err := c.BindURI(req); err != nil {
+				return
+			}
+		}
+
+		if err := fn(c, req); err != nil {
+			c.Fail(err)
+			return
+		}
+		c.OK(nil)
+	}
+
+	return BoundHandler{
+		Handler:      handler,
+		RequestType:  reqType,
+		ResponseType: nil,
+		FuncName:     runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name(),
+	}
+}
+
+// BindRE 将 func(*Context) error 包装为 BoundHandler。
+// 无请求绑定，无响应体，成功时自动返回 c.OK(nil)。
+func BindRE(fn func(*Context) error) BoundHandler {
+	handler := func(c *Context) {
+		if err := fn(c); err != nil {
+			c.Fail(err)
+			return
+		}
+		c.OK(nil)
+	}
+
+	return BoundHandler{
+		Handler:      handler,
+		RequestType:  nil,
+		ResponseType: nil,
+		FuncName:     runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name(),
+	}
+}
+
 // typeHasTag 扫描结构体字段（含嵌入）检查是否有指定 tag。
 // 注册时调用一次，闭包捕获结果。
 func typeHasTag(t reflect.Type, tagName string) bool {
