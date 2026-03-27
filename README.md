@@ -124,6 +124,35 @@ v1.API().
 
 ---
 
+## 路由元信息
+
+通过 `RouteBuilder` 注册的路由，元信息（Summary、Tags 等）在运行时可被中间件查询，适用于操作日志、权限注解等场景。
+
+```go
+// 注册路由时声明元信息
+v1.API().
+    POST("/users", qi.Bind(createUser)).
+    Summary("创建用户").
+    Tags("用户").
+    OperationID("createUser").
+    Done()
+
+// 中间件中查询
+func OperationLogMiddleware(e *qi.Engine) qi.HandlerFunc {
+    return func(c *qi.Context) {
+        c.Next()
+        meta := e.RouteMeta(c.Request().Method, c.FullPath())
+        if meta != nil {
+            log.Printf("操作：%s tags=%v", meta.Summary, meta.Tags)
+        }
+    }
+}
+```
+
+> 直接用 `app.GET/POST` 注册的路由，`meta.Summary` 降级为 handler 函数名，其余字段为零值。
+
+---
+
 ## 泛型绑定
 
 ```go

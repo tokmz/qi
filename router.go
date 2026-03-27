@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// RouteMeta 路由的 OpenAPI 元信息，供中间件运行时查询。
+type RouteMeta struct {
+	Summary     string
+	Description string
+	Tags        []string
+	OperationID string
+	Deprecated  bool
+}
+
 // Route 描述一条已注册路由，供调试、文档生成和扩展能力使用。
 type Route struct {
 	Method      string        // HTTP 方法
@@ -107,6 +116,9 @@ func (e *Engine) handle(method, relativePath, fullPath string, middlewares Handl
 		HandlerName: handlerName,
 		Handlers:    cloneHandlers(chain),
 	})
+
+	// 写入默认元信息（handlerName 作为 Summary），RouteBuilder.Done() 会在之后覆盖
+	e.routeMeta[strings.ToUpper(method)+":"+fullPath] = RouteMeta{Summary: handlerName}
 }
 
 // cleanHandlerName 清理反射获取的函数全名。

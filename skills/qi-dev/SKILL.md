@@ -284,6 +284,43 @@ func authMiddleware() qi.HandlerFunc {
 }
 ```
 
+### 路由元信息（RouteMeta）
+
+通过 `RouteBuilder` 注册的路由，元信息在运行时可被中间件查询。
+key 格式为 `"METHOD:/full/path"`，由框架内部管理，无需手动构造。
+
+```go
+// 注册时声明元信息
+auth.API().
+    DELETE("/users/:id", qi.BindE(deleteUser)).
+    Summary("删除用户").
+    Tags("用户").
+    OperationID("deleteUser").
+    Done()
+
+// 操作日志中间件示例
+func OperationLogMiddleware(e *qi.Engine) qi.HandlerFunc {
+    return func(c *qi.Context) {
+        c.Next()
+        meta := e.RouteMeta(c.Request().Method, c.FullPath())
+        // meta 始终非 nil：RouteBuilder 路由有完整信息；直接注册的路由 Summary 降级为 handlerName
+        log.Printf("uid=%s op=%s tags=%v", c.GetString("uid"), meta.Summary, meta.Tags)
+    }
+}
+
+app.Use(OperationLogMiddleware(app))
+```
+
+**RouteMeta 字段：**
+
+| 字段 | 类型 | 来源 |
+|------|------|------|
+| `Summary` | string | `.Summary("...")` 或降级为 handlerName |
+| `Description` | string | `.Description("...")` |
+| `Tags` | []string | `.Tags("...")` |
+| `OperationID` | string | `.OperationID("...")` |
+| `Deprecated` | bool | `.Deprecated()` |
+
 ---
 
 ## 五、Engine 初始化

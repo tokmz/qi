@@ -362,7 +362,16 @@ func (b *RouteBuilder) Done() {
 		}
 	}
 
-	// 2. 如果 OpenAPI 未启用，直接返回
+	// 2. 写入路由元信息注册表（无论 OpenAPI 是否启用，始终写入）
+	b.engine.SetRouteMeta(b.method, fullPath, RouteMeta{
+		Summary:     b.summary,
+		Description: b.description,
+		Tags:        b.tags,
+		OperationID: b.operationID,
+		Deprecated:  b.deprecated,
+	})
+
+	// 3. 如果 OpenAPI 未启用，直接返回
 	if b.engine.api == nil {
 		return
 	}

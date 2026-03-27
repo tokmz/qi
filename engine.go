@@ -23,7 +23,7 @@ import (
 
 // Version 是 qi 框架的版本号。
 // 构建时通过 ldflags 注入: go build -ldflags "-X github.com/tokmz/qi.Version=v0.2.0"
-var Version = "dev"
+var Version = "v1.1.3"
 
 // Engine 是 qi 的 HTTP 入口，负责路由注册和底层 gin.Engine 持有。
 type Engine struct {
@@ -34,6 +34,7 @@ type Engine struct {
 	cfg             *Config
 	mode            string                      // 运行模式
 	tracingShutdown func(context.Context) error // 链路追踪关闭函数
+	routeMeta       map[string]RouteMeta        // 路由元信息注册表，key="METHOD /full/path"
 }
 
 // Config 定义 Engine 的常用运行配置。
@@ -103,6 +104,7 @@ func New(opts ...Option) *Engine {
 	e := &Engine{
 		engine: engine,
 		router: &routerStore{},
+		routeMeta: make(map[string]RouteMeta),
 		server: &http.Server{
 			Addr:              cfg.Addr,
 			Handler:           engine,
@@ -172,6 +174,22 @@ func (e *Engine) Group(prefix string, handlers ...HandlerFunc) *RouterGroup {
 // Routes 返回已注册路由的快照。
 func (e *Engine) Routes() []Route {
 	return e.router.snapshot()
+}
+
+// SetRouteMeta 写入路由元信息，key 格式为 "METHOD:/full/path"。
+// 由 RouteBuilder.Done() 调用，用户无需直接调用。
+func (e *Engine) SetRouteMeta(method, fullPath string, meta RouteMeta) {
+	e.routeMeta[strings.ToUpper(method)+":"+fullPath] = meta
+}
+
+// RouteMeta 按 method + fullPath 查询路由元信息。
+// 在中间件中使用：meta := e.RouteMeta(c.Request().Method, c.FullPath())
+// 通过 RouteBuilder 注册的路由返回完整元信息；直接注册的路由 Summary 为 handlerName，其余字段为零值。
+func (e *Engine) RouteMeta(method, fullPath string) *RouteMeta {
+	if m, ok := e.routeMeta[strings.ToUpper(method)+":"+fullPath]; ok {
+		return &m
+	}
+	return nil
 }
 
 // Handle 注册一条路由。
