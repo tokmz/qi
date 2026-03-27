@@ -23,7 +23,7 @@ import (
 
 // Version 是 qi 框架的版本号。
 // 构建时通过 ldflags 注入: go build -ldflags "-X github.com/tokmz/qi.Version=v0.2.0"
-var Version = "v1.1.3"
+var Version = "v1.1.4"
 
 // Engine 是 qi 的 HTTP 入口，负责路由注册和底层 gin.Engine 持有。
 type Engine struct {
@@ -102,8 +102,8 @@ func New(opts ...Option) *Engine {
 	engine.Use(gin.Recovery())
 
 	e := &Engine{
-		engine: engine,
-		router: &routerStore{},
+		engine:    engine,
+		router:    &routerStore{},
 		routeMeta: make(map[string]RouteMeta),
 		server: &http.Server{
 			Addr:              cfg.Addr,
