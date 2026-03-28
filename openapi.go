@@ -434,6 +434,10 @@ func (b *RouteBuilder) Done() {
 			req.Body = v
 			req.BodyRequired = true
 		} else {
+			// 有 uri tag 时：用真实结构体覆盖自动提取的 PathParams（保留 desc/example 等信息）
+			if typeHasTag(b.boundRequest, "uri") {
+				req.PathParams = v
+			}
 			req.QueryParams = v
 		}
 		hasRequest = true

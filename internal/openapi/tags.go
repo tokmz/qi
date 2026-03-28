@@ -40,6 +40,14 @@ func ParseFieldTags(field reflect.StructField, mode AnalyzeMode, namer FieldName
 		info.Name = name
 	}
 
+	// 查询参数模式下，跳过仅有 uri tag 且无 form tag 的字段（避免与路径参数重复）
+	if mode == AnalyzeModeQuery && raw == "" {
+		if field.Tag.Get("uri") != "" {
+			info.Ignore = true
+			return info, nil
+		}
+	}
+
 	if openapiTag := field.Tag.Get("openapi"); openapiTag != "" {
 		if openapiTag == "-" {
 			info.Ignore = true

@@ -20,19 +20,23 @@ var (
 // ===== 数据模型 =====
 
 type User struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	ID    string `json:"id"    desc:"用户ID"`
+	Name  string `json:"name"  desc:"用户名"`
+	Email string `json:"email" desc:"邮箱地址"`
 }
 
 type CreateUserReq struct {
-	Name  string `json:"name"  binding:"required,min=2,max=64"`
-	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name"  binding:"required,min=2,max=64" desc:"用户名，2-64个字符" example:"Alice"`
+	Email string `json:"email" binding:"required,email"         desc:"邮箱地址"           example:"alice@example.com"`
 }
 
 type ListUsersResp struct {
-	Total int64  `json:"total"`
-	List  []User `json:"list"`
+	Total int64  `json:"total" desc:"总条数"   example:"2"`
+	List  []User `json:"list"  desc:"用户列表"`
+}
+
+type DeleteUserReq struct {
+	ID string `uri:"id" binding:"required" desc:"用户ID" example:"1"`
 }
 
 // ===== Handler 实现 =====
@@ -45,12 +49,11 @@ func listUsers(c *qi.Context) (*ListUsersResp, error) {
 	return &ListUsersResp{Total: int64(len(users)), List: users}, nil
 }
 
-func getUser(c *qi.Context) (*User, error) {
-	id := c.Param("id")
-	if id != "1" {
+func getUser(c *qi.Context, req *DeleteUserReq) (*User, error) {
+	if req.ID != "1" {
 		return nil, ErrUserNotFound
 	}
-	return &User{ID: id, Name: "Alice", Email: "alice@example.com"}, nil
+	return &User{ID: req.ID, Name: "Alice", Email: "alice@example.com"}, nil
 }
 
 func createUser(c *qi.Context, req *CreateUserReq) (*User, error) {
@@ -60,13 +63,11 @@ func createUser(c *qi.Context, req *CreateUserReq) (*User, error) {
 	return &User{ID: "3", Name: req.Name, Email: req.Email}, nil
 }
 
-func deleteUser(c *qi.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.Fail(qi.ErrBadRequest)
-		return
+func deleteUser(c *qi.Context, req *DeleteUserReq) error {
+	if req.ID == "" {
+		return qi.ErrBadRequest
 	}
-	c.OK(nil, "删除成功")
+	return nil
 }
 
 // ===== 中间件示例 =====
@@ -133,7 +134,7 @@ func main() {
 		Done()
 
 	v1.API().
-		GET("/users/:id", qi.BindR(getUser)).
+		GET("/users/:id", qi.Bind(getUser)).
 		Summary("获取用户详情").
 		Tags("用户").
 		Done()
@@ -148,7 +149,7 @@ func main() {
 		Done()
 
 	auth.API().
-		DELETE("/users/:id", deleteUser).
+		DELETE("/users/:id", qi.BindE(deleteUser)).
 		Summary("删除用户").
 		Tags("用户").
 		Done()

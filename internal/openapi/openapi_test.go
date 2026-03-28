@@ -365,3 +365,68 @@ func TestBuildWithInfoOverridesInfoOnClone(t *testing.T) {
 		t.Fatalf("original manager info should not be mutated: %#v", origDoc.Info)
 	}
 }
+
+func TestUriFieldsExcludedFromQueryParams(t *testing.T) {
+	type detailReq struct {
+		ID   int64  `uri:"id" binding:"required" desc:"用户ID"`
+		Name string `form:"name" desc:"用户名"`
+	}
+
+	m := New()
+	err := m.AddOperation(Operation{
+		Method: "GET",
+		Path:   "/users/{id}",
+		Request: &Request{
+			QueryParams: detailReq{},
+			PathParams:  detailReq{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("add operation: %v", err)
+	}
+
+	doc, err := m.Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	pathItem := doc.Paths["/users/{id}"]
+	if pathItem == nil || pathItem.Get == nil {
+		t.Fatal("missing GET /users/{id}")
+	}
+
+	op := pathItem.Get
+	// 路径参数应包含 id，且带 desc
+	var foundPathID bool
+	for _, p := range op.Parameters {
+		if p.In == "path" && p.Name == "id" {
+			foundPathID = true
+			if p.Description != "用户ID" {
+				t.Fatalf("path param id should have desc '用户ID', got %q", p.Description)
+			}
+		}
+	}
+	if !foundPathID {
+		t.Fatal("path param 'id' not found")
+	}
+
+	// query 参数不应包含 id（uri 字段），应只有 name
+	for _, p := range op.Parameters {
+		if p.In == "query" && p.Name == "id" {
+			t.Fatal("uri field 'id' should not appear as query param")
+		}
+	}
+
+	var foundQueryName bool
+	for _, p := range op.Parameters {
+		if p.In == "query" && p.Name == "name" {
+			foundQueryName = true
+			if p.Description != "用户名" {
+				t.Fatalf("query param name should have desc '用户名', got %q", p.Description)
+			}
+		}
+	}
+	if !foundQueryName {
+		t.Fatal("query param 'name' not found")
+	}
+}
