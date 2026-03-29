@@ -20,6 +20,7 @@ func Bind[Req any, Resp any](fn func(*Context, *Req) (*Resp, error)) BoundHandle
 	reqType := reflect.TypeFor[Req]()
 	respType := reflect.TypeFor[Resp]()
 	hasURITag := typeHasTag(reqType, "uri")
+	hasFormTag := typeHasTag(reqType, "form")
 
 	handler := func(c *Context) {
 		req := new(Req)
@@ -29,7 +30,9 @@ func Bind[Req any, Resp any](fn func(*Context, *Req) (*Resp, error)) BoundHandle
 			if err := c.Bind(req); err != nil {
 				return
 			}
-		} else {
+		} else if hasFormTag {
+			// 仅当结构体含有 form tag 时才调用 BindQuery，
+			// 否则会验证仅有 uri tag 的字段导致必填校验失败
 			if err := c.BindQuery(req); err != nil {
 				return
 			}
@@ -85,6 +88,7 @@ func BindR[Resp any](fn func(*Context) (*Resp, error)) BoundHandler {
 func BindE[Req any](fn func(*Context, *Req) error) BoundHandler {
 	reqType := reflect.TypeFor[Req]()
 	hasURITag := typeHasTag(reqType, "uri")
+	hasFormTag := typeHasTag(reqType, "form")
 
 	handler := func(c *Context) {
 		req := new(Req)
@@ -93,7 +97,7 @@ func BindE[Req any](fn func(*Context, *Req) error) BoundHandler {
 			if err := c.Bind(req); err != nil {
 				return
 			}
-		} else {
+		} else if hasFormTag {
 			if err := c.BindQuery(req); err != nil {
 				return
 			}

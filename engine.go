@@ -22,8 +22,7 @@ import (
 )
 
 // Version 是 qi 框架的版本号。
-// 构建时通过 ldflags 注入: go build -ldflags "-X github.com/tokmz/qi.Version=v0.2.0"
-var Version = "v1.1.4"
+var Version = "v1.1.5"
 
 // Engine 是 qi 的 HTTP 入口，负责路由注册和底层 gin.Engine 持有。
 type Engine struct {
