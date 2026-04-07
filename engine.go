@@ -268,7 +268,9 @@ func (e *Engine) Run() error {
 
 	// flush span 数据后再关闭 HTTP server
 	if e.tracingShutdown != nil {
-		_ = e.tracingShutdown(ctx)
+		if err := e.tracingShutdown(ctx); err != nil {
+			log.Printf("qi: tracing shutdown failed: %v", err)
+		}
 	}
 
 	return e.server.Shutdown(ctx)
@@ -285,6 +287,7 @@ func (e *Engine) buildOpenAPISpec() {
 	// 序列化 OpenAPI spec
 	docJSON, err := e.api.MarshalJSON()
 	if err != nil {
+		log.Printf("qi: OpenAPI spec build failed: %v", err)
 		return
 	}
 

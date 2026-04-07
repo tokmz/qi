@@ -90,7 +90,7 @@ app := qi.New(
 c.OK(data)                           // code=0, message="success"
 c.OK(data, "创建成功")                 // code=0, 自定义 message
 c.Fail(qi.ErrNotFound)               // 自动提取 code / status / message
-c.FailWithCode(400, 1001, "参数错误")  // 完全自定义
+c.FailWithCode(1001, 400, "参数错误")   // code, status, message
 c.Page(total, list)                   // 分页响应
 ```
 

@@ -357,8 +357,8 @@ func (c *Context) Fail(err error) {
 }
 
 // FailWithCode 自定义 code 的错误响应
-// 示例：c.FailWithCode(http.StatusBadRequest, 10001, "参数错误")
-func (c *Context) FailWithCode(status, code int, msg string) {
+// 示例：c.FailWithCode(10001, http.StatusBadRequest, "参数错误")
+func (c *Context) FailWithCode(code, status int, msg string) {
 	c.respond(status, code, msg, nil)
 }
 
