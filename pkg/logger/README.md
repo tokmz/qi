@@ -108,6 +108,7 @@ log.WithContext(ctx context.Context) Logger // 从 context 提取字段创建子
 log.SetLevel(level Level)                  // 动态调整级别（原子操作）
 log.Level() Level                          // 获取当前级别
 log.Sync() error                           // 刷新缓冲区（程序退出前调用）
+log.Close() error                          // 刷新缓冲区并关闭文件句柄（推荐替代 Sync）
 ```
 
 ### Option
@@ -259,8 +260,10 @@ log, err := logger.NewProduction()
 if err != nil {
     panic(err)
 }
-defer log.Sync() // 确保缓冲区内容全部写出
+defer log.Close() // 刷新缓冲区 + 关闭文件句柄（推荐）
 ```
+
+> `Close` 内部会先调用 `Sync` 再关闭文件句柄，可完全替代 `Sync`。如果使用了文件输出（`WithFileOutput`），务必使用 `Close` 避免文件句柄泄漏。
 
 ---
 

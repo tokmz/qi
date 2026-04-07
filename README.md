@@ -15,16 +15,11 @@ package main
 
 import (
     "github.com/tokmz/qi"
-    "go.uber.org/zap"
 )
 
 func main() {
-    zapLogger, _ := zap.NewDevelopment()
-    defer zapLogger.Sync()
-
     app := qi.New(
         qi.WithAddr(":8080"),
-        qi.WithLogger(&qi.LoggerConfig{Logger: zapLogger}),
         qi.WithOpenAPI(&qi.OpenAPIConfig{
             Title:     "My API",
             Version:   "1.0.0",
@@ -185,8 +180,8 @@ app.POST("/cache/flush", qi.BindRE(clearCache))
 ```go
 app := qi.New(
     qi.WithLogger(&qi.LoggerConfig{
-        Logger:    zapLogger,                    // 外部 zap 实例
         SkipPaths: []string{"/ping", "/health"}, // 跳过的路径
+        // Output 默认 os.Stdout，可指定其他 io.Writer
     }),
 )
 ```

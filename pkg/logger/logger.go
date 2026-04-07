@@ -48,15 +48,17 @@ type Logger interface {
 	With(fields ...zap.Field) Logger       // 创建子 Logger
 	WithContext(ctx context.Context) Logger // 创建带 Context 的子 Logger
 	Sync() error                           // 刷新缓冲区
+	Close() error                          // 关闭日志输出（刷新缓冲区并关闭文件句柄）
 	SetLevel(level Level)                  // 动态调整级别
 	Level() Level                          // 获取当前级别
 }
 
 // logger 日志实现
 type logger struct {
-	zap   *zap.Logger
-	level *atomic.Value // 使用指针，With 创建的子 Logger 共享父级别
-	hooks []Hook
+	zap      *zap.Logger
+	level    *atomic.Value // 使用指针，With 创建的子 Logger 共享父级别
+	hooks    []Hook
+	closeFns []func() error // 需要关闭的资源（如文件句柄）
 }
 
 // New 创建 Logger（使用 Config）
@@ -70,7 +72,7 @@ func New(config *Config) (Logger, error) {
 	encoder := buildEncoder(config)
 
 	// 创建 WriteSyncer
-	writers, err := buildWriters(config)
+	writers, closeFns, err := buildWriters(config)
 	if err != nil {
 		return nil, err
 	}
@@ -109,9 +111,10 @@ func New(config *Config) (Logger, error) {
 	zapLogger := zap.New(core, opts...)
 
 	l := &logger{
-		zap:   zapLogger,
-		level: &atomic.Value{},
-		hooks: config.Hooks,
+		zap:      zapLogger,
+		level:    &atomic.Value{},
+		hooks:    config.Hooks,
+		closeFns: closeFns,
 	}
 	l.level.Store(config.Level.toZapLevel())
 
@@ -186,8 +189,9 @@ func buildEncoder(config *Config) zapcore.Encoder {
 }
 
 // buildWriters 构建 WriteSyncer
-func buildWriters(config *Config) ([]zapcore.WriteSyncer, error) {
+func buildWriters(config *Config) ([]zapcore.WriteSyncer, []func() error, error) {
 	var writers []zapcore.WriteSyncer
+	var closeFns []func() error
 
 	// 控制台输出
 	if config.Console {
@@ -198,9 +202,9 @@ func buildWriters(config *Config) ([]zapcore.WriteSyncer, error) {
 	if config.File != "" {
 		writer, closeFn, err := zap.Open(config.File)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open log file %s: %w", config.File, err)
+			return nil, nil, fmt.Errorf("failed to open log file %s: %w", config.File, err)
 		}
-		_ = closeFn // TODO: 在 Logger 增加 Close 方法后调用
+		closeFns = append(closeFns, func() error { closeFn(); return nil })
 		writers = append(writers, writer)
 	}
 
@@ -218,7 +222,7 @@ func buildWriters(config *Config) ([]zapcore.WriteSyncer, error) {
 		writers = append(writers, zapcore.AddSync(rotateWriter))
 	}
 
-	return writers, nil
+	return writers, closeFns, nil
 }
 
 // Debug 记录调试日志
@@ -330,6 +334,20 @@ func (l *logger) WithContext(ctx context.Context) Logger {
 // Sync 刷新缓冲区
 func (l *logger) Sync() error {
 	return l.zap.Sync()
+}
+
+// Close 刷新缓冲区并关闭所有文件句柄
+func (l *logger) Close() error {
+	var firstErr error
+	if err := l.zap.Sync(); err != nil {
+		firstErr = err
+	}
+	for _, fn := range l.closeFns {
+		if err := fn(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // SetLevel 动态调整级别
