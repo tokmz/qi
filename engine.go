@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -98,7 +99,7 @@ func New(opts ...Option) *Engine {
 
 	engine := gin.New()
 
-	engine.Use(gin.Recovery())
+	engine.Use(recoveryMiddleware())
 
 	e := &Engine{
 		engine:    engine,
@@ -441,5 +442,24 @@ func methodToColor(method string) string {
 		return "\033[37m" // 灰
 	default:
 		return "\033[0m"
+	}
+}
+
+// recoveryMiddleware 自定义 panic 恢复中间件，返回 qi 统一 JSON 响应格式
+func recoveryMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				// 检查是否主动中断
+				if err == http.ErrAbortHandler {
+					panic(err)
+				}
+				// 打印堆栈到日志
+				log.Printf("[QI] panic recovered: %v\n%s", err, debug.Stack())
+				// 返回统一 JSON 响应
+				c.AbortWithStatusJSON(http.StatusInternalServerError, NewResponse(ErrServer.Code, ErrServer.Message, nil))
+			}
+		}()
+		c.Next()
 	}
 }
