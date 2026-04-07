@@ -37,17 +37,17 @@ var (
 
 	// ErrInvalidParams 参数无效
 	// Code: 1100, Status: 400
-	ErrInvalidParams = errors.New(1100, "invalid parameters")
+	ErrInvalidParams = errors.NewWithStatus(1100, http.StatusBadRequest, "invalid parameters")
 
 	// ErrMissingParams 缺少参数
 	// Code: 1101, Status: 400
-	ErrMissingParams = errors.New(1101, "missing parameters")
+	ErrMissingParams = errors.NewWithStatus(1101, http.StatusBadRequest, "missing parameters")
 
 	// ErrInvalidFormat 格式错误
 	// Code: 1102, Status: 400
-	ErrInvalidFormat = errors.New(1102, "invalid format")
+	ErrInvalidFormat = errors.NewWithStatus(1102, http.StatusBadRequest, "invalid format")
 
 	// ErrOutOfRange 超出范围
 	// Code: 1103, Status: 400
-	ErrOutOfRange = errors.New(1103, "out of range")
+	ErrOutOfRange = errors.NewWithStatus(1103, http.StatusBadRequest, "out of range")
 )

@@ -19,32 +19,12 @@ type BoundHandler struct {
 func Bind[Req any, Resp any](fn func(*Context, *Req) (*Resp, error)) BoundHandler {
 	reqType := reflect.TypeFor[Req]()
 	respType := reflect.TypeFor[Resp]()
-	hasURITag := typeHasTag(reqType, "uri")
-	hasFormTag := typeHasTag(reqType, "form")
 
 	handler := func(c *Context) {
 		req := new(Req)
-
-		// 根据 HTTP 方法选择绑定方式
-		if isBodyMethod(c.Request().Method) {
-			if err := c.Bind(req); err != nil {
-				return
-			}
-		} else if hasFormTag {
-			// 仅当结构体含有 form tag 时才调用 BindQuery，
-			// 否则会验证仅有 uri tag 的字段导致必填校验失败
-			if err := c.BindQuery(req); err != nil {
-				return
-			}
+		if !bindRequest(c, req, reqType) {
+			return
 		}
-
-		// 仅当 Req 类型含有 uri tag 时才调用 BindURI
-		if hasURITag {
-			if err := c.BindURI(req); err != nil {
-				return
-			}
-		}
-
 		resp, err := fn(c, req)
 		if err != nil {
 			c.Fail(err)
@@ -87,28 +67,12 @@ func BindR[Resp any](fn func(*Context) (*Resp, error)) BoundHandler {
 // 适用于无需返回响应体的场景（如 DELETE），成功时自动返回 c.OK(nil)。
 func BindE[Req any](fn func(*Context, *Req) error) BoundHandler {
 	reqType := reflect.TypeFor[Req]()
-	hasURITag := typeHasTag(reqType, "uri")
-	hasFormTag := typeHasTag(reqType, "form")
 
 	handler := func(c *Context) {
 		req := new(Req)
-
-		if isBodyMethod(c.Request().Method) {
-			if err := c.Bind(req); err != nil {
-				return
-			}
-		} else if hasFormTag {
-			if err := c.BindQuery(req); err != nil {
-				return
-			}
+		if !bindRequest(c, req, reqType) {
+			return
 		}
-
-		if hasURITag {
-			if err := c.BindURI(req); err != nil {
-				return
-			}
-		}
-
 		if err := fn(c, req); err != nil {
 			c.Fail(err)
 			return
@@ -165,4 +129,32 @@ func typeHasTag(t reflect.Type, tagName string) bool {
 		}
 	}
 	return false
+}
+
+// bindRequest 统一请求绑定逻辑。
+// 根据 HTTP 方法和结构体 tag 自动选择 Bind/BindQuery/BindURI。
+// 返回 false 表示绑定失败（已自动写入错误响应）。
+func bindRequest(c *Context, req any, reqType reflect.Type) bool {
+	hasURITag := typeHasTag(reqType, "uri")
+	hasFormTag := typeHasTag(reqType, "form")
+
+	if isBodyMethod(c.Request().Method) {
+		if err := c.Bind(req); err != nil {
+			return false
+		}
+	} else if hasFormTag {
+		// 仅当结构体含有 form tag 时才调用 BindQuery，
+		// 否则会验证仅有 uri tag 的字段导致必填校验失败
+		if err := c.BindQuery(req); err != nil {
+			return false
+		}
+	}
+
+	if hasURITag {
+		if err := c.BindURI(req); err != nil {
+			return false
+		}
+	}
+
+	return true
 }
