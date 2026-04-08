@@ -135,8 +135,8 @@ func typeHasTag(t reflect.Type, tagName string) bool {
 // 根据 HTTP 方法和结构体 tag 自动选择 Bind/BindQuery/BindURI。
 // 返回 false 表示绑定失败（已自动写入错误响应）。
 func bindRequest(c *Context, req any, reqType reflect.Type) bool {
-	hasURITag := typeHasTag(reqType, "uri")
 	hasFormTag := typeHasTag(reqType, "form")
+	hasURITag := typeHasTag(reqType, "uri")
 
 	if isBodyMethod(c.Request().Method) {
 		if err := c.Bind(req); err != nil {

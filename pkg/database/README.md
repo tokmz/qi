@@ -70,7 +70,7 @@ db, err := database.New(&database.Config{
 
 ```go
 database.MySQL      // MySQL
-database.PostgresSQL // PostgreSQL
+database.Postgres // PostgreSQL
 database.SQLite     // SQLite
 database.SQLServer  // SQL Server
 ```
@@ -88,7 +88,7 @@ db, err := database.New(&database.Config{
 
 ```go
 db, err := database.New(&database.Config{
-    Type: database.PostgresSQL,
+    Type: database.Postgres,
     DSN:  "host=localhost user=postgres password=pass dbname=mydb port=5432 sslmode=disable",
 })
 ```

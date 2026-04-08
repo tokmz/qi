@@ -86,7 +86,7 @@ func getDialector(dbType DBType, dsn string) (gorm.Dialector, error) {
 	switch dbType {
 	case MySQL:
 		return mysql.Open(dsn), nil
-	case PostgresSQL:
+	case Postgres:
 		return postgres.Open(dsn), nil
 	case SQLite:
 		return sqlite.Open(dsn), nil

@@ -11,7 +11,7 @@ type DBType string
 
 const (
 	MySQL       DBType = "mysql"
-	PostgresSQL DBType = "postgres"
+	Postgres DBType = "postgres"
 	SQLite      DBType = "sqlite"
 	SQLServer   DBType = "sqlserver"
 )

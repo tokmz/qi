@@ -260,10 +260,10 @@ return nil, ErrUserNotFound.
 | `ErrNotFound` | 1004 | 404 |
 | `ErrConflict` | 1005 | 409 |
 | `ErrTooManyRequests` | 1006 | 429 |
-| `ErrInvalidParams` | 1100 | 500 |
-| `ErrMissingParams` | 1101 | 500 |
-| `ErrInvalidFormat` | 1102 | 500 |
-| `ErrOutOfRange` | 1103 | 500 |
+| `ErrInvalidParams` | 1100 | 400 |
+| `ErrMissingParams` | 1101 | 400 |
+| `ErrInvalidFormat` | 1102 | 400 |
+| `ErrOutOfRange` | 1103 | 400 |
 
 ---
 
