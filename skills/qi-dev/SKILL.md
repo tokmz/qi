@@ -1,10 +1,10 @@
 ---
 name: qi-dev
 description: >-
-  qi HTTP 框架开发助手。当用户在 qi 框架项目中执行以下操作时使用：
-  新建接口/路由、定义业务错误码、编写中间件、生成 OpenAPI 文档注解、
-  编写测试、使用 pkg/* 子包（cache/database/logger/config）。
-  关键词：新建接口、添加路由、定义错误、写中间件、qi框架。
+  qi HTTP 框架开发助手（v1.1.6）。当用户在 qi 框架项目中执行以下操作时使用：
+  新建接口/路由（Bind/BindR/BindE/BindRE）、定义业务错误码、编写中间件、
+  生成 OpenAPI 3.0 文档、编写测试、使用 pkg/* 子包（cache/database/logger/config）。
+  关键词：新建接口、添加路由、定义错误、写中间件、qi框架、OpenAPI、缓存、数据库。
 ---
 
 # qi 框架开发助手
@@ -14,6 +14,7 @@ description: >-
 ## 项目基本信息
 
 - 模块路径：`github.com/tokmz/qi`
+- 版本：v1.1.6
 - Go 1.25+，注释和文档使用**中文**
 - 测试仅用标准 `testing` 包，禁止 testify
 - 错误使用 `pkg/errors` 不可变克隆链，禁止修改哨兵错误
@@ -347,7 +348,10 @@ func OperationLogMiddleware(e *qi.Engine) qi.HandlerFunc {
     return func(c *qi.Context) {
         c.Next()
         meta := e.RouteMeta(c.Request().Method, c.FullPath())
-        // meta 始终非 nil：RouteBuilder 路由有完整信息；直接注册的路由 Summary 降级为 handlerName
+        // meta 对已注册路由非 nil：RouteBuilder 路由有完整信息；直接注册的路由 Summary 降级为 handlerName
+        if meta == nil {
+            return
+        }
         uid, _ := c.Get("uid")
         log.Printf("uid=%v op=%s tags=%v", uid, meta.Summary, meta.Tags)
     }
@@ -388,7 +392,8 @@ app := qi.New(
     qi.WithOpenAPI(&qi.OpenAPIConfig{
         Title:     "My API",
         Version:   "1.0.0",
-        SwaggerUI: "/docs",
+        Path:      "/openapi.json",  // 默认值，可省略
+        SwaggerUI: "/docs",          // 默认值，空字符串=不注册 UI
     }),
 )
 

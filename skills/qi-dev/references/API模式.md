@@ -104,9 +104,17 @@ var user User
 err = c.GetOrSet(ctx, "user:1", &user, time.Hour, func() (any, error) {
     return db.FindUser(1)                      // fn 签名：func() (any, error)，无 ctx 参数
 })
+// 注意：bloom filter 不影响 GetOrSet 的回调执行。bloom 仅拦截 Get/Exists/MGet 的纯读操作。
+// fn 返回 cache.ErrNotFound 时自动写入空值标记（__null__:<key>），NullTTL 内不再查库。
 
 // Flush（Redis 驱动必须配置 KeyPrefix，否则拒绝执行）
 err = c.Flush(ctx)
+
+// 序列化：默认 JSONSerializer，可选 GOBSerializer 或自定义
+c, err := cache.New(&cache.Config{
+    Driver:     cache.DriverMemory,
+    Serializer: cache.GOBSerializer{},
+})
 ```
 
 ### 分布式锁
@@ -128,9 +136,9 @@ if err != nil {
 defer unlock()
 
 // 非阻塞尝试锁
-unlock, err = locker.TryLock(ctx, "order:123", 30*time.Second)
-if err != nil {
-    // 锁被占用
+ok, unlock, err := locker.TryLock(ctx, "order:123", 30*time.Second)
+if !ok {
+    // 锁被占用或出错
 }
 ```
 
@@ -222,17 +230,18 @@ defer log.Close()
 ## pkg/config 使用
 
 ```go
-import "github.com/tokz/qi/pkg/config"
+import "github.com/tokmz/qi/pkg/config"
 
 // 初始化（函数式 Option 模式，非 *Config）
-cfg, err := config.New(
+cfg := config.New(
     config.WithConfigFile("config.yaml"),
     config.WithConfigPaths("./conf", "/etc/myapp"),
     config.WithEnvPrefix("APP"),
-    config.WithAutoWatch(),                      // 自动监听文件变更
+    config.WithAutoWatch(true),                  // 自动监听文件变更
     config.WithOnChange(func() { log.Info("配置已变更") }),
 )
-if err != nil {
+// New() 不返回 error，Load() 才会
+if err := cfg.Load(); err != nil {
     panic(err)
 }
 defer cfg.Close()
@@ -246,10 +255,16 @@ timeout := cfg.GetDuration("timeout")
 // 泛型读取
 port := config.Get[int](cfg, "server.port")
 
-// 热重载
+// 热重载（需在 New 时传入 WithAutoWatch(true) 或手动调用）
 cfg.StartWatch()
 cfg.StopWatch()
 
 // 保护模式（防止关键配置被覆盖）
-cfg.SetProtected("database.dsn")
+cfg.SetProtected(true)
+
+// 高级方法
+subCfg := cfg.Sub("database")        // 子配置（只读轻量实例）
+var dbCfg DBConfig
+cfg.Unmarshal(&dbCfg)                // 全量反序列化
+cfg.UnmarshalKey("database", &dbCfg) // 指定 key 反序列化
 ```

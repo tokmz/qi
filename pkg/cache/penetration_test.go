@@ -188,6 +188,62 @@ func TestPenetration_Exists_NullKeyBlocks(t *testing.T) {
 	}
 }
 
+func TestPenetration_Bloom_GetOrSet_CallbackExecutes(t *testing.T) {
+	g, inner := newTestPenetration(true)
+	defer inner.Close()
+	ctx := context.Background()
+
+	called := false
+	var v string
+	err := g.GetOrSet(ctx, "newkey", &v, time.Hour, func() (any, error) {
+		called = true
+		return "loaded", nil
+	})
+	if err != nil {
+		t.Fatalf("GetOrSet should succeed, got %v", err)
+	}
+	if !called {
+		t.Fatal("callback should have been executed even though key is not in bloom filter")
+	}
+	if v != "loaded" {
+		t.Fatalf("want loaded, got %s", v)
+	}
+	// 验证 bloom filter 已注册该 key
+	if !g.bloomTest("newkey") {
+		t.Fatal("key should be added to bloom filter after successful GetOrSet")
+	}
+	// 验证后续 Get 能命中
+	var v2 string
+	if err := g.Get(ctx, "newkey", &v2); err != nil {
+		t.Fatalf("subsequent Get should succeed, got %v", err)
+	}
+	if v2 != "loaded" {
+		t.Fatalf("want loaded, got %s", v2)
+	}
+}
+
+func TestPenetration_Bloom_GetOrSet_NullKeyBlocksCallback(t *testing.T) {
+	g, inner := newTestPenetration(true)
+	defer inner.Close()
+	ctx := context.Background()
+
+	// 预设空值标记
+	inner.Set(ctx, g.nullKey("k"), true, time.Minute)
+
+	called := false
+	var v string
+	err := g.GetOrSet(ctx, "k", &v, time.Hour, func() (any, error) {
+		called = true
+		return "loaded", nil
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound when null key present, got %v", err)
+	}
+	if called {
+		t.Fatal("callback should NOT be called when null key is present")
+	}
+}
+
 func TestPenetration_IncrBy_Passthrough(t *testing.T) {
 	g, inner := newTestPenetration(false)
 	defer inner.Close()

@@ -108,14 +108,15 @@ c, err := cache.New(&cache.Config{
     },
 })
 
-// GetOrSet：fn 返回 ErrNotFound 时自动写入空值标记，后续请求直接拦截
+// GetOrSet：缓存未命中时调用 fn 加载并回写
 err = c.GetOrSet(ctx, "user:999", &u, time.Hour, func() (any, error) {
     user, err := db.FindUser(999)
     if err == sql.ErrNoRows {
-        return nil, cache.ErrNotFound // 触发空值标记
+        return nil, cache.ErrNotFound // 触发空值标记（NullTTL 内不再查库）
     }
     return user, err
 })
+// bloom filter 不影响 GetOrSet 的回调执行，仅在 Get/Exists/MGet 中拦截确定不存在的 key
 ```
 
 ### 链路追踪
@@ -234,9 +235,11 @@ if errors.Is(err, cache.ErrNotFound) {
 
 | 问题 | 解决方案 | 触发方式 |
 |------|---------|----------|
-| 缓存穿透（key 不存在） | Bloom filter + 空值标记 key | 配置 `Penetration` |
+| 缓存穿透（key 不存在） | Bloom filter（读操作拦截）+ 空值标记 key（阻止重复查库） | 配置 `Penetration` |
 | 缓存击穿（热 key 过期） | `singleflight` 合并并发 fn | `GetOrSet` 自动生效 |
 | 缓存雪崩（批量过期） | TTL ±10% 随机抖动 | Redis 驱动自动生效 |
+
+> Bloom filter 仅作用于读操作（`Get`/`Exists`/`MGet`），不会阻止 `GetOrSet` 的回调执行。这是因为 `GetOrSet` 的语义是"未命中则加载"，bloom 拦截会导致新 key 永远无法写入缓存。
 
 ## 注意事项
 
@@ -245,3 +248,4 @@ if errors.Is(err, cache.ErrNotFound) {
 - 多级缓存中 L1 TTL = L2 实际剩余 TTL × 20%（最低 1 秒），L1 过期后自动从 L2 回填
 - 链路追踪需外部提前初始化 `otel.SetTracerProvider`
 - `GetOrSet` 的 `fn` 若返回 `ErrNotFound`，会自动写入空值标记；其他错误不写入
+- Bloom filter 仅拦截 `Get`/`Exists`/`MGet`，`GetOrSet` 不受 bloom 影响（否则新 key 回调永远不执行）

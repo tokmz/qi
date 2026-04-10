@@ -140,9 +140,10 @@ func (g *penetrationGuard) MSet(ctx context.Context, kvs map[string]any, ttl tim
 
 // GetOrSet 含防穿透：fn 返回 ErrNotFound 时写入空值标记 key，阻止后续穿透
 func (g *penetrationGuard) GetOrSet(ctx context.Context, key string, dest any, ttl time.Duration, fn func() (any, error)) error {
-	if g.bloom != nil && !g.bloomTest(key) {
-		return ErrNotFound
-	}
+	// 注意：不在 GetOrSet 中使用 bloom filter 短路。
+	// GetOrSet 的语义是"未命中则调用 fn 加载并回写"，bloom 短路会导致新 key 的回调永远不执行。
+	// bloom filter 仅适用于纯读操作（Get/Exists/MGet），那里的语义是"确定不存在就不查了"。
+
 	if ok, _ := g.inner.Exists(ctx, g.nullKey(key)); ok {
 		return ErrNotFound
 	}
