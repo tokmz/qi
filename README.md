@@ -53,6 +53,7 @@ func main() {
 | **链路追踪** | 集成 OpenTelemetry，支持 OTLP gRPC/HTTP，自动注入 `trace_id` |
 | **多级缓存** | 内存 LRU + Redis，防穿透/击穿/雪崩，分布式锁 |
 | **数据库** | GORM 封装，读写分离，连接池，zap 日志接入 |
+| **消息队列** | 统一接口，支持 Redis Streams / RabbitMQ / Kafka，链路追踪 |
 | **优雅关闭** | 监听系统信号，flush span 后关闭 HTTP server |
 
 ---
@@ -327,6 +328,50 @@ db, err := database.New(&database.Config{
 
 ---
 
+## 消息队列
+
+```go
+import "github.com/tokmz/qi/pkg/mq"
+
+// Redis Streams
+producer, consumer, err := mq.New(&mq.Config{
+    Driver:         mq.DriverRedis,
+    TracingEnabled: true,
+    Redis: &mq.RedisConfig{
+        Addr:          "127.0.0.1:6379",
+        ConsumerGroup: "my-group",
+        MaxRetries:    3,
+    },
+})
+
+producer.Publish(ctx, "orders", []byte("order-123"))
+consumer.Subscribe(ctx, "orders", func(msg []byte) error {
+    return nil // 返回 nil 确认消息
+})
+
+// RabbitMQ
+producer, consumer, err := mq.New(&mq.Config{
+    Driver:   mq.DriverRabbitMQ,
+    RabbitMQ: &mq.RabbitMQConfig{
+        URL:      "amqp://user:pass@localhost:5672/",
+        Exchange: "my-exchange",
+    },
+})
+
+// Kafka
+producer, consumer, err := mq.New(&mq.Config{
+    Driver: mq.DriverKafka,
+    Kafka:  &mq.KafkaConfig{
+        Brokers:       []string{"localhost:9092"},
+        ConsumerGroup: "my-group",
+    },
+})
+```
+
+详见 [`pkg/mq/README.md`](pkg/mq/README.md)
+
+---
+
 ## 项目结构
 
 ```
@@ -351,6 +396,7 @@ qi/
 │   ├── config/            viper 配置管理
 │   ├── database/          GORM 封装，读写分离，链路追踪
 │   ├── cache/             多级缓存，防穿透/击穿/雪崩，分布式锁
+│   ├── mq/                消息队列，支持 Redis Streams / RabbitMQ / Kafka
 │   └── middleware/        i18n 等中间件
 ├── utils/
 │   ├── strings/           字符串操作、大小写转换

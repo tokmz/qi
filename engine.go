@@ -23,7 +23,7 @@ import (
 )
 
 // Version 是 qi 框架的版本号。
-var Version = "v1.1.6"
+var Version = "v1.1.7"
 
 // Engine 是 qi 的 HTTP 入口，负责路由注册和底层 gin.Engine 持有。
 type Engine struct {
